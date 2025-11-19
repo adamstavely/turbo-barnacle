@@ -3,27 +3,81 @@ import { SuperResolutionAdapter } from './super-resolution-adapter.interface';
 export class EsrganSrAdapter implements SuperResolutionAdapter {
   name = 'ESRGAN';
   private endpoint?: string;
+  private model?: any; // TensorFlow.js model
+  private modelLoaded = false;
 
-  constructor(config?: { endpoint?: string }) {
+  constructor(config?: { endpoint?: string; modelPath?: string }) {
     this.endpoint = config?.endpoint;
+    // In production, modelPath could be used to load TensorFlow.js models
   }
 
   async initialize(): Promise<void> {
-    // For now, this is a placeholder for future ML model loading
-    // In production, this could load TensorFlow.js models or connect to a backend API
-    if (!this.endpoint) {
-      console.warn('ESRGAN adapter: No endpoint configured. Falling back to bicubic.');
+    // Try to load TensorFlow.js model if available
+    try {
+      // Check if TensorFlow.js is available
+      if (typeof window !== 'undefined' && (window as any).tf) {
+        await this.loadTensorFlowModel();
+      } else if (this.endpoint) {
+        // Test endpoint connectivity
+        console.log('ESRGAN adapter: Using API endpoint for super-resolution');
+      } else {
+        console.warn('ESRGAN adapter: No endpoint or TensorFlow.js available. Will fallback to bicubic.');
+      }
+    } catch (error) {
+      console.warn('ESRGAN adapter initialization failed:', error);
+      if (!this.endpoint) {
+        console.warn('ESRGAN adapter: Falling back to bicubic interpolation');
+      }
     }
   }
 
+  private async loadTensorFlowModel(): Promise<void> {
+    // Placeholder for TensorFlow.js model loading
+    // Example structure:
+    // const tf = (window as any).tf;
+    // this.model = await tf.loadLayersModel('/models/esrgan/model.json');
+    // this.modelLoaded = true;
+    // console.log('ESRGAN TensorFlow.js model loaded');
+    
+    // For now, mark as not loaded since we don't have the model
+    this.modelLoaded = false;
+  }
+
   async upscale(imageData: ImageData, scaleFactor: number): Promise<ImageData> {
-    // If endpoint is provided, use backend API
+    // Priority: TensorFlow.js model > API endpoint > Bicubic fallback
+    
+    if (this.modelLoaded && this.model) {
+      return this.upscaleViaTensorFlow(imageData, scaleFactor);
+    }
+    
     if (this.endpoint) {
-      return this.upscaleViaApi(imageData, scaleFactor);
+      try {
+        return await this.upscaleViaApi(imageData, scaleFactor);
+      } catch (error) {
+        console.warn('ESRGAN API failed, falling back to bicubic:', error);
+        return this.fallbackToBicubic(imageData, scaleFactor);
+      }
     }
 
-    // Otherwise, fallback to bicubic (or could load TensorFlow.js model here)
-    console.warn('ESRGAN not available, falling back to bicubic interpolation');
+    // Fallback to bicubic
+    return this.fallbackToBicubic(imageData, scaleFactor);
+  }
+
+  private async upscaleViaTensorFlow(imageData: ImageData, scaleFactor: number): Promise<ImageData> {
+    // TensorFlow.js implementation
+    // This would use the loaded model to perform super-resolution
+    // Example structure:
+    // const tf = (window as any).tf;
+    // const tensor = tf.browser.fromPixels(imageData);
+    // const upscaled = this.model.predict(tensor);
+    // const upscaledData = await upscaled.data();
+    // return this.tensorToImageData(upscaled, imageData.width * scaleFactor, imageData.height * scaleFactor);
+    
+    // For now, fallback since model isn't loaded
+    return this.fallbackToBicubic(imageData, scaleFactor);
+  }
+  
+  private async fallbackToBicubic(imageData: ImageData, scaleFactor: number): Promise<ImageData> {
     const { BicubicSrAdapter } = await import('./bicubic-sr.adapter');
     const bicubic = new BicubicSrAdapter();
     return bicubic.upscale(imageData, scaleFactor);

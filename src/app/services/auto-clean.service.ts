@@ -241,9 +241,91 @@ export class AutoCleanService {
   }
 
   private estimateSkew(imageData: ImageData): number {
-    // Simplified skew estimation
-    // In production, use proper line detection
-    return 0; // Placeholder
+    // Estimate skew angle by detecting text line angles
+    // Uses Hough-like approach: detect horizontal lines and measure their angle
+    
+    const angles: number[] = [];
+    const sampleStep = 10;
+    
+    // Sample horizontal lines across the image
+    for (let y = imageData.height * 0.2; y < imageData.height * 0.8; y += sampleStep) {
+      const lineBrightness: number[] = [];
+      
+      // Sample brightness along horizontal line
+      for (let x = imageData.width * 0.1; x < imageData.width * 0.9; x += 2) {
+        const pixel = getPixel(imageData, x, y);
+        const brightness = (pixel.r + pixel.g + pixel.b) / 3;
+        lineBrightness.push(brightness);
+      }
+      
+      // Find edges (text lines)
+      const edges: number[] = [];
+      for (let i = 1; i < lineBrightness.length - 1; i++) {
+        const diff = Math.abs(lineBrightness[i] - lineBrightness[i - 1]);
+        if (diff > 30) {
+          edges.push(i);
+        }
+      }
+      
+      // If we have multiple edges, estimate line angle
+      if (edges.length >= 2) {
+        // Calculate average spacing (text should have regular spacing)
+        let totalSpacing = 0;
+        for (let i = 1; i < edges.length; i++) {
+          totalSpacing += edges[i] - edges[i - 1];
+        }
+        const avgSpacing = totalSpacing / (edges.length - 1);
+        
+        // Check if spacing is regular (indicates text line)
+        let isRegular = true;
+        for (let i = 1; i < edges.length; i++) {
+          const spacing = edges[i] - edges[i - 1];
+          if (Math.abs(spacing - avgSpacing) > avgSpacing * 0.3) {
+            isRegular = false;
+            break;
+          }
+        }
+        
+        if (isRegular && edges.length >= 3) {
+          // Estimate angle by comparing line positions at different y coordinates
+          const nextY = y + sampleStep;
+          if (nextY < imageData.height * 0.8) {
+            const nextLineBrightness: number[] = [];
+            for (let x = imageData.width * 0.1; x < imageData.width * 0.9; x += 2) {
+              const pixel = getPixel(imageData, x, nextY);
+              const brightness = (pixel.r + pixel.g + pixel.b) / 3;
+              nextLineBrightness.push(brightness);
+            }
+            
+            const nextEdges: number[] = [];
+            for (let i = 1; i < nextLineBrightness.length - 1; i++) {
+              const diff = Math.abs(nextLineBrightness[i] - nextLineBrightness[i - 1]);
+              if (diff > 30) {
+                nextEdges.push(i);
+              }
+            }
+            
+            // Compare edge positions to estimate skew
+            if (nextEdges.length >= 2 && edges.length >= 2) {
+              const edgeShift = nextEdges[0] - edges[0];
+              const angle = Math.atan2(sampleStep, edgeShift * 2) * (180 / Math.PI);
+              if (Math.abs(angle) < 45) { // Only consider reasonable angles
+                angles.push(angle);
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Return median angle
+    if (angles.length === 0) return 0;
+    
+    angles.sort((a, b) => a - b);
+    const medianIndex = Math.floor(angles.length / 2);
+    return angles.length % 2 === 0
+      ? (angles[medianIndex - 1] + angles[medianIndex]) / 2
+      : angles[medianIndex];
   }
 
   private estimateShadowRatio(imageData: ImageData): number {

@@ -227,6 +227,14 @@ Recommended browsers:
 - Firefox (latest)
 - Safari (latest)
 
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+- **[API Documentation](docs/API.md)** - Complete API reference for all services, adapters, and models
+- **[User Guide](docs/USER_GUIDE.md)** - Detailed guide for using all features
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)** - Guide for extending the application with custom adapters and components
+
 ## License
 
 [Add your license information here]

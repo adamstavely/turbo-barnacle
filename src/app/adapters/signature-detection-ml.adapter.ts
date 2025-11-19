@@ -168,10 +168,112 @@ export class SignatureDetectionMlAdapter implements SignatureDetectionAdapter {
   }
 
   private estimateTextDensity(imageData: ImageData, x: number, y: number, width: number, height: number): number {
-    // Simple heuristic: text regions have more uniform patterns
-    // Signatures have more irregular patterns
-    // This is a simplified approach
-    return 0.1; // Placeholder
+    // Estimate text density by analyzing:
+    // 1. Horizontal line patterns (text has more horizontal lines)
+    // 2. Regular spacing (text has more uniform spacing)
+    // 3. Character-like structures (text has repeated patterns)
+    
+    const endX = Math.min(x + width, imageData.width);
+    const endY = Math.min(y + height, imageData.height);
+    
+    let horizontalLines = 0;
+    let verticalLines = 0;
+    let regularPatterns = 0;
+    let totalSamples = 0;
+    
+    // Sample pixels in the region
+    for (let py = y + 2; py < endY - 2; py += 5) {
+      for (let px = x + 2; px < endX - 2; px += 5) {
+        totalSamples++;
+        
+        // Get pixel brightness
+        const idx = (py * imageData.width + px) * 4;
+        const brightness = (imageData.data[idx] + imageData.data[idx + 1] + imageData.data[idx + 2]) / 3;
+        
+        // Check horizontal line patterns (text has more horizontal lines)
+        let horizontalEdges = 0;
+        for (let dx = -2; dx <= 2; dx++) {
+          if (px + dx >= x && px + dx < endX) {
+            const neighborIdx = (py * imageData.width + (px + dx)) * 4;
+            const neighborBrightness = (imageData.data[neighborIdx] + imageData.data[neighborIdx + 1] + imageData.data[neighborIdx + 2]) / 3;
+            if (Math.abs(brightness - neighborBrightness) > 30) {
+              horizontalEdges++;
+            }
+          }
+        }
+        if (horizontalEdges >= 2) {
+          horizontalLines++;
+        }
+        
+        // Check vertical line patterns (signatures have more vertical strokes)
+        let verticalEdges = 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          if (py + dy >= y && py + dy < endY) {
+            const neighborIdx = ((py + dy) * imageData.width + px) * 4;
+            const neighborBrightness = (imageData.data[neighborIdx] + imageData.data[neighborIdx + 1] + imageData.data[neighborIdx + 2]) / 3;
+            if (Math.abs(brightness - neighborBrightness) > 30) {
+              verticalEdges++;
+            }
+          }
+        }
+        if (verticalEdges >= 2) {
+          verticalLines++;
+        }
+        
+        // Check for regular spacing patterns (text has more regular spacing)
+        // Look for repeated patterns in horizontal direction
+        if (px + 10 < endX) {
+          const pattern1 = this.getPatternSignature(imageData, px, py, 5);
+          const pattern2 = this.getPatternSignature(imageData, px + 5, py, 5);
+          const similarity = this.comparePatterns(pattern1, pattern2);
+          if (similarity > 0.7) {
+            regularPatterns++;
+          }
+        }
+      }
+    }
+    
+    if (totalSamples === 0) return 0;
+    
+    // Text regions typically have:
+    // - More horizontal lines than vertical (reading direction)
+    // - More regular patterns (repeated characters)
+    const horizontalRatio = horizontalLines / totalSamples;
+    const verticalRatio = verticalLines / totalSamples;
+    const regularityRatio = regularPatterns / totalSamples;
+    
+    // Text density is higher when:
+    // - Horizontal lines dominate over vertical
+    // - Regular patterns are present
+    const textDensity = Math.min(1.0, 
+      (horizontalRatio * 0.5) + 
+      (Math.max(0, horizontalRatio - verticalRatio) * 0.3) + 
+      (regularityRatio * 0.2)
+    );
+    
+    return textDensity;
+  }
+  
+  private getPatternSignature(imageData: ImageData, x: number, y: number, width: number): number[] {
+    const signature: number[] = [];
+    for (let dx = 0; dx < width && x + dx < imageData.width; dx++) {
+      const idx = (y * imageData.width + (x + dx)) * 4;
+      const brightness = (imageData.data[idx] + imageData.data[idx + 1] + imageData.data[idx + 2]) / 3;
+      signature.push(brightness);
+    }
+    return signature;
+  }
+  
+  private comparePatterns(pattern1: number[], pattern2: number[]): number {
+    if (pattern1.length !== pattern2.length || pattern1.length === 0) return 0;
+    
+    let similarity = 0;
+    for (let i = 0; i < pattern1.length; i++) {
+      const diff = Math.abs(pattern1[i] - pattern2[i]);
+      similarity += 1 - (diff / 255);
+    }
+    
+    return similarity / pattern1.length;
   }
 
   private mergeOverlappingSignatures(signatures: Signature[]): Signature[] {
