@@ -77,6 +77,26 @@ import { ExportModalComponent } from '../export-modal/export-modal.component';
               </mat-list>
             </div>
           </mat-tab>
+
+          <mat-tab label="Metadata">
+            <div class="tab-content">
+              @if (hasMetadata()) {
+                <div class="metadata-view">
+                  <h4>Engine: {{ currentResult()!.engine }}</h4>
+                  @if (currentResult()!.processingTime !== undefined) {
+                    <p><strong>Processing Time:</strong> {{ currentResult()!.processingTime }}ms</p>
+                  }
+                  @if (currentResult()!.confidence !== undefined) {
+                    <p><strong>Overall Confidence:</strong> {{ (currentResult()!.confidence! * 100) | number:'1.0-2' }}%</p>
+                  }
+                  <h4>Additional Metadata:</h4>
+                  <pre class="metadata-json">{{ metadataJson() }}</pre>
+                </div>
+              } @else {
+                <p class="no-metadata">No metadata available for this OCR result.</p>
+              }
+            </div>
+          </mat-tab>
         </mat-tab-group>
       }
     </div>
@@ -163,6 +183,41 @@ import { ExportModalComponent } from '../export-modal/export-modal.component';
     .box-meta span {
       display: inline-block;
     }
+
+    .metadata-view {
+      padding: 16px;
+    }
+
+    .metadata-view h4 {
+      margin-top: 16px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .metadata-view p {
+      margin: 8px 0;
+      font-size: 13px;
+    }
+
+    .metadata-json {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .no-metadata {
+      color: #666;
+      text-align: center;
+      padding: 40px 20px;
+    }
   `]
 })
 export class ResultsPanelComponent implements OnInit, OnChanges {
@@ -197,6 +252,17 @@ export class ResultsPanelComponent implements OnInit, OnChanges {
 
   jsonOutput(): string {
     return JSON.stringify(this.currentResult(), null, 2);
+  }
+
+  hasMetadata(): boolean {
+    const result = this.currentResult();
+    return !!(result?.metadata && Object.keys(result.metadata).length > 0);
+  }
+
+  metadataJson(): string {
+    const result = this.currentResult();
+    if (!result || !result.metadata) return '{}';
+    return JSON.stringify(result.metadata, null, 2);
   }
 
   onBoxHover(boxId: string | null): void {

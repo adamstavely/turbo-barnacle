@@ -11,6 +11,10 @@ import { ResultsPanelComponent } from '../results-panel/results-panel.component'
 import { TableDetectionComponent } from '../table-detection/table-detection.component';
 import { AutoCleanComponent } from '../auto-clean/auto-clean.component';
 import { AutoCleanService, AutoCleanRecommendations } from '../../services/auto-clean.service';
+import { OcrOptionsPanelComponent } from '../ocr-options-panel/ocr-options-panel.component';
+import { OcrOptions } from '../../models/ocr-options.interface';
+import { RestApiConfigComponent } from '../rest-api-config/rest-api-config.component';
+import { StatePersistenceService } from '../../services/state-persistence.service';
 import { TrapezoidalCorrectionComponent } from '../trapezoidal-correction/trapezoidal-correction.component';
 import { PolygonWarpComponent } from '../polygon-warp/polygon-warp.component';
 import { MultiEngineComparisonComponent } from '../multi-engine-comparison/multi-engine-comparison.component';
@@ -25,6 +29,7 @@ import { UndoRedoService } from '../../services/undo-redo.service';
 import { OcrEngineService } from '../../services/ocr-engine.service';
 import { ImageProcessingService } from '../../services/image-processing.service';
 import { GeometricTransformService } from '../../services/geometric-transform.service';
+import { PdfRasterizerService } from '../../services/pdf-rasterizer.service';
 import { imageDataToBlob } from '../../utils/image-helpers';
 import { BoundingBox } from '../../models/bounding-box.interface';
 import { OcrResult } from '../../models/ocr-result.interface';
@@ -43,7 +48,8 @@ import { OcrResult } from '../../models/ocr-result.interface';
     BoundingBoxEditorComponent,
     ResultsPanelComponent,
     TableDetectionComponent,
-    AutoCleanComponent
+    AutoCleanComponent,
+    OcrOptionsPanelComponent
   ],
   template: `
     <div class="app-container">
@@ -57,7 +63,10 @@ import { OcrResult } from '../../models/ocr-result.interface';
         (undo)="onUndo()"
         (redo)="onRedo()"
         (clear)="onClear()"
-        (compareEngines)="onCompareEngines()">
+        (compareEngines)="onCompareEngines()"
+        (configureRestApi)="onConfigureRestApi()"
+        (saveState)="onSaveState()"
+        (loadState)="onLoadState()">
       </app-toolbar>
 
       <div class="main-content">
@@ -68,6 +77,7 @@ import { OcrResult } from '../../models/ocr-result.interface';
         } @else {
           <div class="three-panel-layout">
             <div class="left-panel">
+              <app-ocr-options-panel (optionsChange)="onOcrOptionsChange($event)"></app-ocr-options-panel>
               <app-enhancement-tools-panel (transformChange)="onEnhancementChange($event)"></app-enhancement-tools-panel>
               <app-warp-tools-panel (transformChange)="onWarpChange($event)"></app-warp-tools-panel>
               <app-bounding-box-editor
@@ -189,6 +199,7 @@ export class OcrAppRootComponent implements OnInit {
   isProcessing = signal(false);
   hoveredBoxId = signal<string | null>(null);
   processedImageData = signal<ImageData | null>(null);
+  currentOcrOptions = signal<OcrOptions | undefined>(undefined);
 
   state = computed(() => this.stateStore.getState()());
   
@@ -210,6 +221,8 @@ export class OcrAppRootComponent implements OnInit {
     private warpMesh: WarpMeshService,
     private textLineStraightening: TextLineStraighteningService,
     private autoClean: AutoCleanService,
+    private statePersistence: StatePersistenceService,
+    private pdfRasterizer: PdfRasterizerService,
     private dialog: MatDialog
   ) {}
 
@@ -282,7 +295,15 @@ export class OcrAppRootComponent implements OnInit {
     fileType: string;
     width: number;
     height: number;
+    batchPages?: number[];
+    batchFile?: File;
   }): void {
+    // Handle batch processing
+    if (event.batchPages && event.batchFile) {
+      this.processBatchPdf(event.batchFile, event.batchPages);
+      return;
+    }
+
     this.stateStore.setImage(
       event.imageUrl,
       event.fileName,
@@ -293,6 +314,70 @@ export class OcrAppRootComponent implements OnInit {
     );
     this.processedImageData.set(event.imageData);
     this.undoRedo.saveState(this.stateStore.getState()());
+  }
+
+  async processBatchPdf(file: File, pageNumbers: number[]): Promise<void> {
+    // Process multiple PDF pages
+    this.isProcessing.set(true);
+    const results: OcrResult[] = [];
+
+    try {
+      for (const pageNum of pageNumbers) {
+        const { imageData, width, height } = await this.pdfRasterizer.rasterizePdf(file, pageNum, 2.0);
+        const blob = await imageDataToBlob(imageData);
+        const options = this.currentOcrOptions();
+        const result = await this.ocrEngine.performOCR(blob, options);
+        
+        // Add page number to result metadata
+        result.metadata = {
+          ...result.metadata,
+          pageNumber: pageNum,
+          fileName: `${file.name} (Page ${pageNum})`
+        };
+        
+        results.push(result);
+      }
+
+      // Combine results
+      const combinedText = results.map(r => r.text).join('\n\n--- Page Break ---\n\n');
+      const combinedBoxes = results.flatMap((r, idx) => 
+        r.boundingBoxes.map(box => ({ ...box, id: `${box.id}-page${idx + 1}` }))
+      );
+      
+      const combinedResult: OcrResult = {
+        text: combinedText,
+        boundingBoxes: combinedBoxes,
+        confidence: results.reduce((sum, r) => sum + (r.confidence || 0), 0) / results.length,
+        engine: results[0]?.engine || 'Unknown',
+        processingTime: results.reduce((sum, r) => sum + (r.processingTime || 0), 0),
+        metadata: {
+          batchProcessed: true,
+          pageCount: pageNumbers.length,
+          pages: pageNumbers
+        }
+      };
+
+      // Load first page as the displayed image
+      const { imageData, width, height } = await this.pdfRasterizer.rasterizePdf(file, pageNumbers[0], 2.0);
+      this.stateStore.setImage(
+        URL.createObjectURL(file),
+        `${file.name} (Batch: ${pageNumbers.length} pages)`,
+        file.type,
+        width,
+        height,
+        imageData
+      );
+      this.processedImageData.set(imageData);
+      
+      // Add combined OCR result
+      this.stateStore.addOcrResult(combinedResult);
+      this.undoRedo.saveState(this.stateStore.getState()());
+    } catch (error) {
+      console.error('Batch processing failed:', error);
+      alert('Failed to process batch PDF. Please try again.');
+    } finally {
+      this.isProcessing.set(false);
+    }
   }
 
   onEnhancementChange(transform: any): void {
@@ -493,6 +578,54 @@ export class OcrAppRootComponent implements OnInit {
     });
   }
 
+  onConfigureRestApi(): void {
+    const dialogRef = this.dialog.open(RestApiConfigComponent, {
+      width: '600px',
+      maxWidth: '90%',
+      data: null
+    });
+
+    dialogRef.afterClosed().subscribe((result: any) => {
+      if (result && result.success) {
+        // Refresh engine selector to show new adapter
+        // The engine selector will automatically update via its effect
+      }
+    });
+  }
+
+  async onSaveState(): Promise<void> {
+    const currentState = this.state();
+    try {
+      await this.statePersistence.saveStateToFile(currentState);
+    } catch (error) {
+      console.error('Failed to save state:', error);
+      alert('Failed to save state. Please try again.');
+    }
+  }
+
+  async onLoadState(): Promise<void> {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (event: any) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      try {
+        const loadedState = await this.statePersistence.loadStateFromFile(file);
+        this.stateStore.setState(loadedState);
+        this.processedImageData.set(loadedState.currentImageData);
+        // Clear undo/redo history when loading new state
+        this.undoRedo.clear();
+        this.undoRedo.saveState(loadedState);
+      } catch (error) {
+        console.error('Failed to load state:', error);
+        alert('Failed to load state. Please ensure the file is a valid OCR state file.');
+      }
+    };
+    input.click();
+  }
+
   openMeshWarpDialog(): void {
     const currentState = this.state();
     if (!currentState.currentImageData) return;
@@ -563,6 +696,10 @@ export class OcrAppRootComponent implements OnInit {
     });
   }
 
+  onOcrOptionsChange(options: OcrOptions): void {
+    this.currentOcrOptions.set(options);
+  }
+
   async onRunOcr(): Promise<void> {
     const currentState = this.state();
     if (!currentState.currentImageData) return;
@@ -571,7 +708,8 @@ export class OcrAppRootComponent implements OnInit {
 
     try {
       const blob = await imageDataToBlob(currentState.currentImageData);
-      const result = await this.ocrEngine.performOCR(blob);
+      const options = this.currentOcrOptions();
+      const result = await this.ocrEngine.performOCR(blob, options);
       
       this.stateStore.addOcrResult(result);
     } catch (error) {

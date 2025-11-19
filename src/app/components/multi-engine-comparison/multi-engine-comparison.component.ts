@@ -296,7 +296,7 @@ export class MultiEngineComparisonComponent implements OnInit {
         try {
           const currentAdapter = this.ocrEngineService.getCurrentAdapterName();
           await this.ocrEngineService.setAdapter(adapter.name);
-          const result = await this.ocrEngineService.performOCR(blob);
+            const result = await this.ocrEngineService.performOCR(blob, undefined);
           // Restore original adapter
           if (currentAdapter) {
             await this.ocrEngineService.setAdapter(currentAdapter);

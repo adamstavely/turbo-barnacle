@@ -7,6 +7,7 @@ import { MatRadioModule } from '@angular/material/radio';
 import { FormsModule } from '@angular/forms';
 import { OcrResult } from '../../models/ocr-result.interface';
 import { BoundingBox } from '../../models/bounding-box.interface';
+import jsPDF from 'jspdf';
 
 export interface ExportModalData {
   ocrResult: OcrResult | null;
@@ -34,6 +35,7 @@ export interface ExportModalData {
           <mat-radio-button value="text">Plain Text</mat-radio-button>
           <mat-radio-button value="csv">CSV (Table)</mat-radio-button>
           <mat-radio-button value="png">PNG with Overlay</mat-radio-button>
+          <mat-radio-button value="pdf">PDF with Overlay</mat-radio-button>
         </mat-radio-group>
       </div>
     </mat-dialog-content>
@@ -56,7 +58,7 @@ export interface ExportModalData {
   `]
 })
 export class ExportModalComponent {
-  selectedFormat: 'json' | 'text' | 'csv' | 'png' = 'json';
+  selectedFormat: 'json' | 'text' | 'csv' | 'png' | 'pdf' = 'json';
 
   constructor(
     public dialogRef: MatDialogRef<ExportModalComponent>,
@@ -80,6 +82,9 @@ export class ExportModalComponent {
         break;
       case 'png':
         await this.exportPNG();
+        break;
+      case 'pdf':
+        await this.exportPDF();
         break;
     }
     this.dialogRef.close();
@@ -156,6 +161,86 @@ export class ExportModalComponent {
         this.downloadBlob(blob, 'ocr-result-overlay.png');
       }
     }, 'image/png');
+  }
+
+  private async exportPDF(): Promise<void> {
+    if (!this.data.imageData) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = this.data.imageData.width;
+    canvas.height = this.data.imageData.height;
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) return;
+
+    // Draw image
+    ctx.putImageData(this.data.imageData, 0, 0);
+
+    // Draw bounding boxes
+    ctx.strokeStyle = '#4CAF50';
+    ctx.lineWidth = 2;
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#4CAF50';
+
+    this.data.boundingBoxes.forEach(box => {
+      // Draw box
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
+      
+      // Draw text label
+      if (box.text) {
+        ctx.fillText(box.text.substring(0, 30), box.x, box.y - 5);
+      }
+    });
+
+    // Convert canvas to image data URL
+    const imageDataUrl = canvas.toDataURL('image/png');
+
+    // Create PDF
+    const pdf = new jsPDF({
+      orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+      unit: 'px',
+      format: [canvas.width, canvas.height]
+    });
+
+    // Add image to PDF
+    pdf.addImage(imageDataUrl, 'PNG', 0, 0, canvas.width, canvas.height);
+
+    // Add OCR text and metadata if available
+    if (this.data.ocrResult) {
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      
+      // Add text content on a new page
+      pdf.addPage();
+      pdf.setFontSize(12);
+      pdf.text('OCR Results', 20, 20);
+      
+      if (this.data.ocrResult.text) {
+        const textLines = pdf.splitTextToSize(this.data.ocrResult.text, pageWidth - 40);
+        pdf.text(textLines, 20, 40);
+      }
+
+      // Add metadata if available
+      if (this.data.ocrResult.metadata && Object.keys(this.data.ocrResult.metadata).length > 0) {
+        pdf.addPage();
+        pdf.setFontSize(12);
+        pdf.text('Metadata', 20, 20);
+        let yPos = 40;
+        Object.entries(this.data.ocrResult.metadata).forEach(([key, value]) => {
+          const text = `${key}: ${JSON.stringify(value)}`;
+          const lines = pdf.splitTextToSize(text, pageWidth - 40);
+          pdf.text(lines, 20, yPos);
+          yPos += lines.length * 7;
+          if (yPos > pageHeight - 20) {
+            pdf.addPage();
+            yPos = 20;
+          }
+        });
+      }
+    }
+
+    // Download PDF
+    pdf.save('ocr-result-overlay.pdf');
   }
 
   private downloadBlob(blob: Blob, filename: string): void {

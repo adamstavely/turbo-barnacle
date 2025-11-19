@@ -271,18 +271,26 @@ export class MultiPagePdfComponent implements OnInit {
     const selected = this.selectedPages();
     if (selected.length === 0) return;
 
-    // For now, process the first selected page
-    // In a full implementation, you'd process all selected pages
-    try {
-      const { imageData, width, height } = await this.pdfRasterizer.rasterizePdf(
-        this.file,
-        selected[0],
-        2.0
-      );
-      this.dialogRef.close({ imageData, width, height, pageNumber: selected[0] });
-    } catch (error) {
-      console.error('Failed to process PDF page:', error);
-      alert('Failed to process PDF page. Please try again.');
+    if (selected.length === 1) {
+      // Single page - process directly
+      try {
+        const { imageData, width, height } = await this.pdfRasterizer.rasterizePdf(
+          this.file,
+          selected[0],
+          2.0
+        );
+        this.dialogRef.close({ imageData, width, height, pageNumber: selected[0] });
+      } catch (error) {
+        console.error('Failed to process PDF page:', error);
+        alert('Failed to process PDF page. Please try again.');
+      }
+    } else {
+      // Multiple pages - return batch processing info
+      this.dialogRef.close({ 
+        batchPages: selected,
+        file: this.file,
+        batchMode: true
+      });
     }
   }
 }

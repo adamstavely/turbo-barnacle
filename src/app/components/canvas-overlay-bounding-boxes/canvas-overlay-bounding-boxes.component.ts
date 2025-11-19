@@ -7,26 +7,33 @@ import { BoundingBox } from '../../models/bounding-box.interface';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <canvas #overlayCanvas
-            [width]="canvasWidth"
-            [height]="canvasHeight"
-            [style.width.px]="displayWidth"
-            [style.height.px]="displayHeight"
-            (mousedown)="onMouseDown($event)"
-            (mousemove)="onMouseMove($event)"
-            (mouseup)="onMouseUp($event)"
-            (mouseleave)="onMouseLeave()">
-    </canvas>
+        <canvas #overlayCanvas
+                [width]="canvasWidth"
+                [height]="canvasHeight"
+                [style.width.px]="displayWidth"
+                [style.height.px]="displayHeight"
+                tabindex="0"
+                (mousedown)="onMouseDown($event)"
+                (mousemove)="onMouseMove($event)"
+                (mouseup)="onMouseUp($event)"
+                (mouseleave)="onMouseLeave()">
+        </canvas>
   `,
-  styles: [`
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: auto;
-      cursor: crosshair;
-    }
-  `]
+      styles: [`
+        canvas {
+          position: absolute;
+          top: 0;
+          left: 0;
+          pointer-events: auto;
+          cursor: crosshair;
+          outline: none;
+        }
+
+        canvas:focus {
+          outline: 2px solid #2196F3;
+          outline-offset: -2px;
+        }
+      `]
 })
 export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnChanges {
   @Input() boundingBoxes: BoundingBox[] = [];
@@ -72,16 +79,23 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
     }
   }
 
-  @HostListener('keydown', ['$event'])
-  onKeyDown(event: KeyboardEvent): void {
-    if (!this.selectedBoxId) return;
+      @HostListener('window:keydown', ['$event'])
+      onKeyDown(event: KeyboardEvent): void {
+        // Only handle if canvas has focus or a box is selected
+        if (!this.selectedBoxId) return;
 
-    const selectedBox = this.boundingBoxes.find(b => b.id === this.selectedBoxId);
-    if (!selectedBox) return;
+        // Check if the event target is an input/textarea (don't interfere with text editing)
+        const target = event.target as HTMLElement;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+          return;
+        }
 
-    const step = event.shiftKey ? 10 : 1;
-    let newX = selectedBox.x;
-    let newY = selectedBox.y;
+        const selectedBox = this.boundingBoxes.find(b => b.id === this.selectedBoxId);
+        if (!selectedBox) return;
+
+        const step = event.shiftKey ? 10 : 1;
+        let newX = selectedBox.x;
+        let newY = selectedBox.y;
 
     switch (event.key) {
       case 'ArrowLeft':
@@ -107,10 +121,13 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
     }
   }
 
-  onMouseDown(event: MouseEvent): void {
-    const rect = this.overlayCanvasRef.nativeElement.getBoundingClientRect();
-    const x = (event.clientX - rect.left) / this.scaleX;
-    const y = (event.clientY - rect.top) / this.scaleY;
+      onMouseDown(event: MouseEvent): void {
+        // Focus canvas to receive keyboard events
+        this.overlayCanvasRef.nativeElement.focus();
+        
+        const rect = this.overlayCanvasRef.nativeElement.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / this.scaleX;
+        const y = (event.clientY - rect.top) / this.scaleY;
 
     // Check if clicking on a resize handle
     const handle = this.getResizeHandle(x, y);

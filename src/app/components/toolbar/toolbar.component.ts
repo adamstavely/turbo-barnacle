@@ -4,6 +4,7 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { EngineSelectorComponent } from '../engine-selector/engine-selector.component';
 
 @Component({
@@ -15,6 +16,7 @@ import { EngineSelectorComponent } from '../engine-selector/engine-selector.comp
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
+    MatTooltipModule,
     EngineSelectorComponent
   ],
   template: `
@@ -46,6 +48,15 @@ import { EngineSelectorComponent } from '../engine-selector/engine-selector.comp
       <button mat-raised-button color="accent" (click)="compareEngines.emit()" [disabled]="!canRunOcr">
         <mat-icon>compare_arrows</mat-icon>
         Compare
+      </button>
+      <button mat-icon-button (click)="onConfigureRestApi()" matTooltip="Configure REST API">
+        <mat-icon>settings</mat-icon>
+      </button>
+      <button mat-icon-button (click)="onSaveState()" [disabled]="!canRunOcr" matTooltip="Save State">
+        <mat-icon>save</mat-icon>
+      </button>
+      <button mat-icon-button (click)="onLoadState()" matTooltip="Load State">
+        <mat-icon>folder_open</mat-icon>
       </button>
     </mat-toolbar>
   `,
@@ -86,6 +97,9 @@ export class ToolbarComponent {
   @Output() redo = new EventEmitter<void>();
   @Output() clear = new EventEmitter<void>();
   @Output() compareEngines = new EventEmitter<void>();
+  @Output() configureRestApi = new EventEmitter<void>();
+  @Output() saveState = new EventEmitter<void>();
+  @Output() loadState = new EventEmitter<void>();
 
   onRunOcr(): void {
     this.runOcr.emit();
@@ -105,6 +119,18 @@ export class ToolbarComponent {
 
   onCompareEngines(): void {
     this.compareEngines.emit();
+  }
+
+  onConfigureRestApi(): void {
+    this.configureRestApi.emit();
+  }
+
+  onSaveState(): void {
+    this.saveState.emit();
+  }
+
+  onLoadState(): void {
+    this.loadState.emit();
   }
 }
 

@@ -143,7 +143,19 @@ export class ImageLoaderComponent {
           });
 
           dialogRef.afterClosed().subscribe((result: any) => {
-            if (result && result.imageData) {
+            if (result && result.batchMode) {
+              // Emit batch processing event
+              this.imageLoaded.emit({
+                imageData: null as any, // Will be handled by batch processor
+                imageUrl: '',
+                fileName: file.name,
+                fileType: file.type,
+                width: 0,
+                height: 0,
+                batchPages: result.batchPages,
+                batchFile: result.file
+              } as any);
+            } else if (result && result.imageData) {
               const scaledImageData = scaleImageData(result.imageData, 2000);
               const scaleFactor = scaledImageData.width / result.imageData.width;
               

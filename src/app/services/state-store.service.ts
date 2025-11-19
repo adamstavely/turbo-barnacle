@@ -212,5 +212,9 @@ export class StateStoreService {
   clearState(): void {
     this.state.set(this.initialState);
   }
+
+  setState(newState: ImageState): void {
+    this.state.set(newState);
+  }
 }
 
