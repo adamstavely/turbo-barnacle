@@ -6,6 +6,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatMenuModule } from '@angular/material/menu';
 import { BoundingBox } from '../../models/bounding-box.interface';
 
 @Component({
@@ -18,7 +20,9 @@ import { BoundingBox } from '../../models/bounding-box.interface';
     MatInputModule,
     MatButtonModule,
     MatIconModule,
-    MatListModule
+    MatListModule,
+    MatCheckboxModule,
+    MatMenuModule
   ],
   template: `
     <div class="bounding-box-editor">
@@ -65,10 +69,34 @@ import { BoundingBox } from '../../models/bounding-box.interface';
             <input matInput [(ngModel)]="selectedBox.label" (ngModelChange)="onBoxUpdate()">
           </mat-form-field>
 
-          <button mat-raised-button color="warn" (click)="onDeleteBox()">
-            <mat-icon>delete</mat-icon>
-            Delete Box
+          <div class="action-buttons">
+            <button mat-stroked-button (click)="onSplitBox('horizontal')" [disabled]="!canSplit">
+              <mat-icon>call_split</mat-icon>
+              Split Horizontal
+            </button>
+            <button mat-stroked-button (click)="onSplitBox('vertical')" [disabled]="!canSplit">
+              <mat-icon>call_split</mat-icon>
+              Split Vertical
+            </button>
+            <button mat-raised-button color="warn" (click)="onDeleteBox()">
+              <mat-icon>delete</mat-icon>
+              Delete Box
+            </button>
+          </div>
+        </div>
+      }
+
+      @if (boundingBoxes.length > 0) {
+        <div class="multi-select-actions">
+          <button mat-stroked-button (click)="onMergeBoxes()" [disabled]="!canMerge">
+            <mat-icon>merge_type</mat-icon>
+            Merge Selected ({{ selectedBoxIds.size }})
           </button>
+          @if (selectedBoxIds.size > 0) {
+            <button mat-button (click)="clearSelection()">
+              Clear Selection
+            </button>
+          }
         </div>
       }
 
@@ -76,10 +104,18 @@ import { BoundingBox } from '../../models/bounding-box.interface';
         @for (box of boundingBoxes; track box.id) {
           <mat-list-item 
             [class.selected]="box.id === selectedBoxId"
-            (click)="onSelectBox(box.id)">
-            <div class="box-item">
+            [class.multi-selected]="selectedBoxIds.has(box.id)">
+            <mat-checkbox 
+              [checked]="selectedBoxIds.has(box.id)"
+              (change)="onToggleSelection(box.id, $event.checked)"
+              (click)="$event.stopPropagation()">
+            </mat-checkbox>
+            <div class="box-item" (click)="onSelectBox(box.id)">
               <div class="box-text">{{ box.text || 'No text' }}</div>
               <div class="box-coords">({{ box.x }}, {{ box.y }}) {{ box.width }}×{{ box.height }}</div>
+              @if (box.label) {
+                <div class="box-label">Label: {{ box.label }}</div>
+              }
             </div>
           </mat-list-item>
         }
@@ -122,8 +158,33 @@ import { BoundingBox } from '../../models/bounding-box.interface';
       background: #e3f2fd;
     }
 
-    .box-item {
+    mat-list-item.multi-selected {
+      background: #fff3e0;
+    }
+
+    .action-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .action-buttons button {
       width: 100%;
+    }
+
+    .multi-select-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding: 8px;
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
+
+    .box-item {
+      flex: 1;
+      cursor: pointer;
     }
 
     .box-text {
@@ -144,9 +205,21 @@ export class BoundingBoxEditorComponent {
   @Output() boxSelected = new EventEmitter<string>();
   @Output() boxUpdated = new EventEmitter<BoundingBox>();
   @Output() boxDeleted = new EventEmitter<string>();
+  @Output() boxesMerged = new EventEmitter<string[]>();
+  @Output() boxSplit = new EventEmitter<{ boxId: string; direction: 'horizontal' | 'vertical' }>();
+
+  selectedBoxIds = new Set<string>();
 
   get selectedBox(): BoundingBox | null {
     return this.boundingBoxes.find(b => b.id === this.selectedBoxId) || null;
+  }
+
+  get canMerge(): boolean {
+    return this.selectedBoxIds.size >= 2;
+  }
+
+  get canSplit(): boolean {
+    return this.selectedBoxId !== null;
   }
 
   onSelectBox(boxId: string): void {
@@ -162,6 +235,31 @@ export class BoundingBoxEditorComponent {
   onDeleteBox(): void {
     if (this.selectedBoxId) {
       this.boxDeleted.emit(this.selectedBoxId);
+    }
+  }
+
+  onToggleSelection(boxId: string, checked: boolean): void {
+    if (checked) {
+      this.selectedBoxIds.add(boxId);
+    } else {
+      this.selectedBoxIds.delete(boxId);
+    }
+  }
+
+  clearSelection(): void {
+    this.selectedBoxIds.clear();
+  }
+
+  onMergeBoxes(): void {
+    if (this.selectedBoxIds.size >= 2) {
+      this.boxesMerged.emit(Array.from(this.selectedBoxIds));
+      this.selectedBoxIds.clear();
+    }
+  }
+
+  onSplitBox(direction: 'horizontal' | 'vertical'): void {
+    if (this.selectedBoxId) {
+      this.boxSplit.emit({ boxId: this.selectedBoxId, direction });
     }
   }
 }

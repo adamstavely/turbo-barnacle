@@ -8,7 +8,10 @@ import { EnhancementToolsPanelComponent } from '../enhancement-tools-panel/enhan
 import { WarpToolsPanelComponent } from '../warp-tools-panel/warp-tools-panel.component';
 import { BoundingBoxEditorComponent } from '../bounding-box-editor/bounding-box-editor.component';
 import { ResultsPanelComponent } from '../results-panel/results-panel.component';
+import { TrapezoidalCorrectionComponent } from '../trapezoidal-correction/trapezoidal-correction.component';
+import { MatDialog } from '@angular/material/dialog';
 import { StateStoreService } from '../../services/state-store.service';
+import { PerspectivePoints } from '../../services/geometric-transform.service';
 import { UndoRedoService } from '../../services/undo-redo.service';
 import { OcrEngineService } from '../../services/ocr-engine.service';
 import { ImageProcessingService } from '../../services/image-processing.service';
@@ -59,7 +62,9 @@ import { BoundingBox } from '../../models/bounding-box.interface';
                 [selectedBoxId]="state().selectedBoxId"
                 (boxSelected)="onBoxSelected($event)"
                 (boxUpdated)="onBoxUpdated($event)"
-                (boxDeleted)="onBoxDeleted($event)">
+                (boxDeleted)="onBoxDeleted($event)"
+                (boxesMerged)="onBoxesMerged($event)"
+                (boxSplit)="onBoxSplit($event)">
               </app-bounding-box-editor>
             </div>
 
@@ -179,7 +184,8 @@ export class OcrAppRootComponent implements OnInit {
     private undoRedo: UndoRedoService,
     private ocrEngine: OcrEngineService,
     private imageProcessing: ImageProcessingService,
-    private geometricTransform: GeometricTransformService
+    private geometricTransform: GeometricTransformService,
+    private dialog: MatDialog
   ) {}
 
   ngOnInit(): void {
@@ -277,6 +283,11 @@ export class OcrAppRootComponent implements OnInit {
     const currentState = this.state();
     if (!currentState.currentImageData) return;
 
+    if (transform.openTrapezoidal) {
+      this.openTrapezoidalDialog();
+      return;
+    }
+
     let processed = currentState.currentImageData;
 
     if (transform.reset) {
@@ -299,10 +310,43 @@ export class OcrAppRootComponent implements OnInit {
         const angle = this.geometricTransform.autoDeskew(processed);
         processed = this.geometricTransform.rotate(processed, -angle);
       }
+      if (transform.perspective) {
+        processed = this.geometricTransform.applyPerspectiveCorrection(processed, transform.perspective);
+      }
     }
 
     this.processedImageData.set(processed);
     this.stateStore.updateImageData(processed);
+  }
+
+  openTrapezoidalDialog(): void {
+    const currentState = this.state();
+    if (!currentState.currentImageData) return;
+
+    const dialogRef = this.dialog.open(TrapezoidalCorrectionComponent, {
+      width: '90%',
+      maxWidth: '1200px',
+      height: '90%',
+      maxHeight: '800px',
+      data: {
+        imageData: currentState.currentImageData,
+        imageUrl: currentState.imageUrl,
+        canvasWidth: Math.min(currentState.width, 800),
+        canvasHeight: Math.min(currentState.height, 600)
+      }
+    });
+
+    dialogRef.afterClosed().subscribe((result: any) => {
+      if (result && currentState.currentImageData) {
+        const points = result as PerspectivePoints;
+        const processed = this.geometricTransform.applyPerspectiveCorrection(
+          currentState.currentImageData,
+          points
+        );
+        this.processedImageData.set(processed);
+        this.stateStore.updateImageData(processed);
+      }
+    });
   }
 
   async onRunOcr(): Promise<void> {
@@ -361,6 +405,14 @@ export class OcrAppRootComponent implements OnInit {
     };
     this.stateStore.addBoundingBox(newBox);
     this.stateStore.setSelectedBox(newBox.id);
+  }
+
+  onBoxesMerged(boxIds: string[]): void {
+    this.stateStore.mergeBoundingBoxes(boxIds);
+  }
+
+  onBoxSplit(event: { boxId: string; direction: 'horizontal' | 'vertical' }): void {
+    this.stateStore.splitBoundingBox(event.boxId, event.direction);
   }
 
   onBoxHover(boxId: string | null): void {

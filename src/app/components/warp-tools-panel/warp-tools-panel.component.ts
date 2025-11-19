@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSelectModule } from '@angular/material/select';
 import { MatExpansionModule } from '@angular/material/expansion';
+import { MatIconModule } from '@angular/material/icon';
 import { InterpolationMethod } from '../../utils/math-helpers';
 import { PerspectivePoints } from '../../services/geometric-transform.service';
 
@@ -19,7 +20,8 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
     MatFormFieldModule,
     MatButtonModule,
     MatSelectModule,
-    MatExpansionModule
+    MatExpansionModule,
+    MatIconModule
   ],
   template: `
     <div class="warp-panel">
@@ -87,6 +89,10 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
         </mat-expansion-panel-header>
 
         <p class="info-text">Adjust corner points for perspective correction</p>
+        <button mat-stroked-button (click)="onOpenTrapezoidal()" class="action-button">
+          <mat-icon>crop_free</mat-icon>
+          Open Trapezoidal Correction
+        </button>
         <button mat-stroked-button (click)="onPerspectiveCorrection()" class="action-button">
           Apply Perspective Correction
         </button>
@@ -185,6 +191,7 @@ export class WarpToolsPanelComponent {
     barrel?: number;
     pincushion?: number;
     autoDeskew?: boolean;
+    openTrapezoidal?: boolean;
     reset?: boolean;
   }>();
 
@@ -209,6 +216,10 @@ export class WarpToolsPanelComponent {
 
   onAutoDeskew(): void {
     this.transformChange.emit({ autoDeskew: true });
+  }
+
+  onOpenTrapezoidal(): void {
+    this.transformChange.emit({ openTrapezoidal: true });
   }
 
   onPerspectiveCorrection(): void {
