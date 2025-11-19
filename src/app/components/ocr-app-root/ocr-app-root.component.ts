@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ToolbarComponent } from '../toolbar/toolbar.component';
 import { ImageLoaderComponent } from '../image-loader/image-loader.component';
@@ -193,6 +193,59 @@ export class OcrAppRootComponent implements OnInit {
     const adapters = this.ocrEngine.getAvailableAdapters();
     if (adapters.length > 0) {
       this.ocrEngine.setAdapter(adapters[0].name);
+    }
+  }
+
+  @HostListener('window:keydown', ['$event'])
+  onKeyDown(event: KeyboardEvent): void {
+    // Ctrl/Cmd + Z: Undo
+    if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      if (this.canUndo()) {
+        this.onUndo();
+      }
+      return;
+    }
+
+    // Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y: Redo
+    if ((event.ctrlKey || event.metaKey) && (event.shiftKey && event.key === 'z' || event.key === 'y')) {
+      event.preventDefault();
+      if (this.canRedo()) {
+        this.onRedo();
+      }
+      return;
+    }
+
+    // Delete/Backspace: Delete selected bounding box
+    if ((event.key === 'Delete' || event.key === 'Backspace') && this.state().selectedBoxId) {
+      event.preventDefault();
+      this.onBoxDeleted(this.state().selectedBoxId);
+      return;
+    }
+
+    // Escape: Deselect bounding box
+    if (event.key === 'Escape' && this.state().selectedBoxId) {
+      event.preventDefault();
+      this.stateStore.setSelectedBox(null);
+      return;
+    }
+
+    // Ctrl/Cmd + Enter: Run OCR
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      if (this.hasImage() && !this.isProcessing()) {
+        this.onRunOcr();
+      }
+      return;
+    }
+
+    // Ctrl/Cmd + N: Clear/New
+    if ((event.ctrlKey || event.metaKey) && event.key === 'n') {
+      event.preventDefault();
+      if (this.hasImage()) {
+        this.onClear();
+      }
+      return;
     }
   }
 
