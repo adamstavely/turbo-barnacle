@@ -111,10 +111,10 @@ export class MeshWarpEditorComponent implements AfterViewInit {
   private ctx: CanvasRenderingContext2D | null = null;
 
   private mesh: MeshPoint[][] = [];
-  private meshDensity = 8;
+  meshDensity = 8;
   private isDragging = false;
   private draggedPoint: { row: number; col: number } | null = null;
-  private pinMode = false;
+  pinMode = false;
   private scaleX = 1;
   private scaleY = 1;
 
