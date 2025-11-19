@@ -9,6 +9,8 @@ import { WarpToolsPanelComponent } from '../warp-tools-panel/warp-tools-panel.co
 import { BoundingBoxEditorComponent } from '../bounding-box-editor/bounding-box-editor.component';
 import { ResultsPanelComponent } from '../results-panel/results-panel.component';
 import { TableDetectionComponent } from '../table-detection/table-detection.component';
+import { AutoCleanComponent } from '../auto-clean/auto-clean.component';
+import { AutoCleanService, AutoCleanRecommendations } from '../../services/auto-clean.service';
 import { TrapezoidalCorrectionComponent } from '../trapezoidal-correction/trapezoidal-correction.component';
 import { PolygonWarpComponent } from '../polygon-warp/polygon-warp.component';
 import { MultiEngineComparisonComponent } from '../multi-engine-comparison/multi-engine-comparison.component';
@@ -40,7 +42,8 @@ import { OcrResult } from '../../models/ocr-result.interface';
     WarpToolsPanelComponent,
     BoundingBoxEditorComponent,
     ResultsPanelComponent,
-    TableDetectionComponent
+    TableDetectionComponent,
+    AutoCleanComponent
   ],
   template: `
     <div class="app-container">
@@ -80,6 +83,10 @@ import { OcrResult } from '../../models/ocr-result.interface';
                 [boundingBoxes]="state().boundingBoxes"
                 (tableHighlighted)="onTableHighlighted($event)">
               </app-table-detection>
+              <app-auto-clean
+                [imageData]="processedImageData()"
+                (recommendationsApplied)="onAutoCleanApplied($event)">
+              </app-auto-clean>
             </div>
 
             <div class="center-panel">
@@ -202,6 +209,7 @@ export class OcrAppRootComponent implements OnInit {
     private polygonWarp: PolygonWarpService,
     private warpMesh: WarpMeshService,
     private textLineStraightening: TextLineStraighteningService,
+    private autoClean: AutoCleanService,
     private dialog: MatDialog
   ) {}
 
@@ -338,13 +346,21 @@ export class OcrAppRootComponent implements OnInit {
       if (transform.removeGlare) {
         processed = this.imageProcessing.removeGlare(processed);
       }
-      if (transform.whitenBackground) {
-        processed = this.imageProcessing.whitenBackground(processed);
-      }
-      if (transform.autoLighting) {
-        processed = this.imageProcessing.autoLightingCorrection(processed);
-      }
-    }
+          if (transform.whitenBackground) {
+            processed = this.imageProcessing.whitenBackground(processed);
+          }
+          if (transform.autoLighting) {
+            processed = this.imageProcessing.autoLightingCorrection(processed);
+          }
+          if (transform.superResolution !== undefined && transform.superResolution > 1) {
+            processed = this.imageProcessing.applySuperResolution(processed, transform.superResolution);
+            // Update dimensions after super-resolution
+            this.stateStore.updateState({
+              width: processed.width,
+              height: processed.height
+            });
+          }
+        }
 
     this.processedImageData.set(processed);
     this.stateStore.updateImageData(processed);
@@ -622,6 +638,65 @@ export class OcrAppRootComponent implements OnInit {
     if (table.boundingBox) {
       this.stateStore.setSelectedBox(table.boundingBox.id);
     }
+  }
+
+  onAutoCleanApplied(recommendations: AutoCleanRecommendations): void {
+    // Apply all recommended enhancements
+    const currentState = this.state();
+    if (!currentState.currentImageData) return;
+
+    let processed = currentState.currentImageData;
+
+    // Apply recommendations in optimal order
+    if (recommendations.removeShadows) {
+      processed = this.imageProcessing.removeShadows(processed);
+    }
+    if (recommendations.removeGlare) {
+      processed = this.imageProcessing.removeGlare(processed);
+    }
+    if (recommendations.whitenBackground) {
+      processed = this.imageProcessing.whitenBackground(processed);
+    }
+    if (recommendations.brightness !== undefined) {
+      processed = this.imageProcessing.applyBrightness(processed, recommendations.brightness);
+    }
+    if (recommendations.contrast !== undefined) {
+      processed = this.imageProcessing.applyContrast(processed, recommendations.contrast);
+    }
+    if (recommendations.denoise !== undefined && recommendations.denoise > 0) {
+      processed = this.imageProcessing.applyDenoiseGaussian(processed, recommendations.denoise);
+    }
+    if (recommendations.sharpen !== undefined && recommendations.sharpen > 0) {
+      processed = this.imageProcessing.applySharpen(processed, recommendations.sharpen);
+    }
+    if (recommendations.binarization) {
+      if (recommendations.binarizationMethod === 'niblack') {
+        processed = this.imageProcessing.applyBinarizationNiblack(processed);
+      } else if (recommendations.binarizationMethod === 'sauvola') {
+        processed = this.imageProcessing.applyBinarizationSauvola(processed);
+      } else {
+        processed = this.imageProcessing.applyBinarizationOtsu(processed);
+      }
+    }
+    if (recommendations.clahe) {
+      processed = this.imageProcessing.applyCLAHE(processed);
+    }
+    if (recommendations.autoDeskew) {
+      this.geometricTransform.autoDeskewAsync(processed).then(angle => {
+        const corrected = this.geometricTransform.rotate(processed, -angle);
+        this.processedImageData.set(corrected);
+        this.stateStore.updateImageData(corrected);
+      }).catch(() => {
+        const angle = this.geometricTransform.autoDeskew(processed);
+        const corrected = this.geometricTransform.rotate(processed, -angle);
+        this.processedImageData.set(corrected);
+        this.stateStore.updateImageData(corrected);
+      });
+      return; // Don't update synchronously for async operation
+    }
+
+    this.processedImageData.set(processed);
+    this.stateStore.updateImageData(processed);
   }
 
   onUndo(): void {

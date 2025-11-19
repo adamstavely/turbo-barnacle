@@ -145,10 +145,33 @@ import { MatSelectModule } from '@angular/material/select';
         </div>
       </mat-expansion-panel>
 
-      <mat-expansion-panel>
-        <mat-expansion-panel-header>
-          <mat-panel-title>Advanced Enhancement</mat-panel-title>
-        </mat-expansion-panel-header>
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>Super Resolution</mat-panel-title>
+            </mat-expansion-panel-header>
+
+            <p class="info-text">Upscale image for better OCR accuracy</p>
+            <div class="slider-control">
+              <label>Scale Factor: {{ superResolutionScale | number:'1.0-1' }}x</label>
+              <mat-slider
+                [min]="1"
+                [max]="4"
+                [step]="0.5"
+                [discrete]="true"
+                [(ngModel)]="superResolutionScale"
+                (ngModelChange)="onSuperResolutionChange($event)">
+              </mat-slider>
+            </div>
+            <button mat-stroked-button (click)="onApplySuperResolution()" class="action-button">
+              <mat-icon>zoom_in</mat-icon>
+              Apply Super Resolution
+            </button>
+          </mat-expansion-panel>
+
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>Advanced Enhancement</mat-panel-title>
+            </mat-expansion-panel-header>
 
         <button mat-stroked-button (click)="onCLAHE()" class="action-button">
           <mat-icon>auto_fix_high</mat-icon>
@@ -241,11 +264,12 @@ export class EnhancementToolsPanelComponent {
     clahe?: boolean;
     removeShadows?: boolean;
     removeGlare?: boolean;
-    whitenBackground?: boolean;
-    bilateralDenoise?: number;
-    autoLighting?: boolean;
-    reset?: boolean;
-  }>();
+        whitenBackground?: boolean;
+        bilateralDenoise?: number;
+        autoLighting?: boolean;
+        superResolution?: number;
+        reset?: boolean;
+      }>();
 
   brightness = 0;
   contrast = 0;
@@ -255,8 +279,9 @@ export class EnhancementToolsPanelComponent {
   denoise = 0;
   binarization = false;
   binarizationMethod: 'otsu' | 'niblack' | 'sauvola' = 'otsu';
-  edgeEnhancement = 0;
-  bilateralDenoise = 0;
+      edgeEnhancement = 0;
+      bilateralDenoise = 0;
+      superResolutionScale = 2;
 
   onBrightnessChange(value: number): void {
     this.transformChange.emit({ brightness: value });
@@ -314,11 +339,19 @@ export class EnhancementToolsPanelComponent {
     this.transformChange.emit({ whitenBackground: true });
   }
 
-  onBilateralDenoiseChange(value: number): void {
-    this.transformChange.emit({ bilateralDenoise: value });
-  }
+      onBilateralDenoiseChange(value: number): void {
+        this.transformChange.emit({ bilateralDenoise: value });
+      }
 
-  onReset(): void {
+      onSuperResolutionChange(value: number): void {
+        this.superResolutionScale = value;
+      }
+
+      onApplySuperResolution(): void {
+        this.transformChange.emit({ superResolution: this.superResolutionScale });
+      }
+
+      onReset(): void {
     this.brightness = 0;
     this.contrast = 0;
     this.saturation = 0;
@@ -327,9 +360,10 @@ export class EnhancementToolsPanelComponent {
     this.denoise = 0;
     this.binarization = false;
     this.binarizationMethod = 'otsu';
-    this.edgeEnhancement = 0;
-    this.bilateralDenoise = 0;
-    this.transformChange.emit({ reset: true });
+        this.edgeEnhancement = 0;
+        this.bilateralDenoise = 0;
+        this.superResolutionScale = 2;
+        this.transformChange.emit({ reset: true });
   }
 }
 
