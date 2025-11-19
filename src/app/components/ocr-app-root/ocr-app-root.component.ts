@@ -11,8 +11,10 @@ import { ResultsPanelComponent } from '../results-panel/results-panel.component'
 import { TrapezoidalCorrectionComponent } from '../trapezoidal-correction/trapezoidal-correction.component';
 import { PolygonWarpComponent } from '../polygon-warp/polygon-warp.component';
 import { MultiEngineComparisonComponent } from '../multi-engine-comparison/multi-engine-comparison.component';
+import { MeshWarpEditorComponent } from '../mesh-warp-editor/mesh-warp-editor.component';
 import { MatDialog } from '@angular/material/dialog';
 import { PolygonWarpService } from '../../services/polygon-warp.service';
+import { WarpMeshService } from '../../services/warp-mesh.service';
 import { StateStoreService } from '../../services/state-store.service';
 import { PerspectivePoints } from '../../services/geometric-transform.service';
 import { UndoRedoService } from '../../services/undo-redo.service';
@@ -191,6 +193,7 @@ export class OcrAppRootComponent implements OnInit {
     private imageProcessing: ImageProcessingService,
     private geometricTransform: GeometricTransformService,
     private polygonWarp: PolygonWarpService,
+    private warpMesh: WarpMeshService,
     private dialog: MatDialog
   ) {}
 
@@ -353,7 +356,16 @@ export class OcrAppRootComponent implements OnInit {
         return;
       }
 
+      if (transform.openMeshWarp) {
+        this.openMeshWarpDialog();
+        return;
+      }
+
     let processed = currentState.currentImageData;
+
+      if (transform.curvatureFlattening !== undefined) {
+        processed = this.warpMesh.applyCurvatureFlattening(processed, transform.curvatureFlattening);
+      }
 
     if (transform.reset) {
       processed = currentState.originalImageData || processed;
@@ -442,6 +454,40 @@ export class OcrAppRootComponent implements OnInit {
     dialogRef.afterClosed().subscribe((result: OcrResult | null) => {
       if (result) {
         this.stateStore.addOcrResult(result);
+      }
+    });
+  }
+
+  openMeshWarpDialog(): void {
+    const currentState = this.state();
+    if (!currentState.currentImageData) return;
+
+    const dialogRef = this.dialog.open(MeshWarpEditorComponent, {
+      width: '90%',
+      maxWidth: '1200px',
+      height: '90%',
+      maxHeight: '800px',
+      data: {
+        imageData: currentState.currentImageData,
+        imageUrl: currentState.imageUrl,
+        canvasWidth: Math.min(currentState.width, 800),
+        canvasHeight: Math.min(currentState.height, 600)
+      }
+    });
+
+    dialogRef.afterClosed().subscribe((result: any) => {
+      if (result && result.mesh && currentState.currentImageData) {
+        try {
+          const processed = this.warpMesh.applyMeshWarp(
+            currentState.currentImageData,
+            result.mesh
+          );
+          this.processedImageData.set(processed);
+          this.stateStore.updateImageData(processed);
+        } catch (error) {
+          console.error('Mesh warp failed:', error);
+          alert('Failed to apply mesh warp. Please try again.');
+        }
       }
     });
   }

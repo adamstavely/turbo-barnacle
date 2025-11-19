@@ -110,6 +110,37 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
             </button>
           </mat-expansion-panel>
 
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>Mesh Warp Editor</mat-panel-title>
+            </mat-expansion-panel-header>
+
+            <p class="info-text">Pin-based mesh warping for fine control</p>
+            <button mat-stroked-button (click)="onOpenMeshWarp()" class="action-button">
+              <mat-icon>grid_on</mat-icon>
+              Open Mesh Warp Editor
+            </button>
+          </mat-expansion-panel>
+
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>Curvature Flattening</mat-panel-title>
+            </mat-expansion-panel-header>
+
+            <p class="info-text">Flatten curved pages (book de-warping)</p>
+            <div class="slider-control">
+              <label>Curvature: {{ curvature | number:'1.0-2' }}</label>
+              <mat-slider
+                [min]="0"
+                [max]="0.5"
+                [step]="0.01"
+                [discrete]="true"
+                [(ngModel)]="curvature"
+                (ngModelChange)="onCurvatureChange($event)">
+              </mat-slider>
+            </div>
+          </mat-expansion-panel>
+
       <mat-expansion-panel>
         <mat-expansion-panel-header>
           <mat-panel-title>Lens Distortion</mat-panel-title>
@@ -205,6 +236,8 @@ export class WarpToolsPanelComponent {
     autoDeskew?: boolean;
     openTrapezoidal?: boolean;
     openPolygonWarp?: boolean;
+    openMeshWarp?: boolean;
+    curvatureFlattening?: number;
     reset?: boolean;
   }>();
 
@@ -214,6 +247,7 @@ export class WarpToolsPanelComponent {
   interpolation: InterpolationMethod = 'bilinear';
   barrel = 0;
   pincushion = 0;
+  curvature = 0;
 
   onRotationChange(value: number): void {
     this.transformChange.emit({ rotation: value });
@@ -239,6 +273,14 @@ export class WarpToolsPanelComponent {
         this.transformChange.emit({ openPolygonWarp: true });
       }
 
+      onOpenMeshWarp(): void {
+        this.transformChange.emit({ openMeshWarp: true });
+      }
+
+      onCurvatureChange(value: number): void {
+        this.transformChange.emit({ curvatureFlattening: value });
+      }
+
       onPerspectiveCorrection(): void {
         // This would typically be handled by canvas interaction
         // For now, emit event to trigger perspective correction UI
@@ -253,8 +295,10 @@ export class WarpToolsPanelComponent {
     this.rotation = 0;
     this.scaleX = 1;
     this.scaleY = 1;
+    this.interpolation = 'bilinear';
     this.barrel = 0;
     this.pincushion = 0;
+    this.curvature = 0;
     this.transformChange.emit({ reset: true });
   }
 }
