@@ -122,7 +122,7 @@ import { imageDataToBlob } from '../../utils/image-helpers';
                       <pre>{{ result.text }}</pre>
                     </div>
                     <div class="result-stats">
-                      <mat-chip>Words: {{ result.text.split(/\s+/).filter(w => w.length > 0).length }}</mat-chip>
+                      <mat-chip>Words: {{ getWordCount(result.text) }}</mat-chip>
                       <mat-chip>Characters: {{ result.text.length }}</mat-chip>
                       <mat-chip>Bounding Boxes: {{ result.boundingBoxes.length }}</mat-chip>
                     </div>
@@ -268,8 +268,12 @@ export class MultiEngineComparisonComponent implements OnInit {
   summaryData() {
     return this.results().map(result => ({
       ...result,
-      wordCount: result.text.split(/\s+/).filter(w => w.length > 0).length
+      wordCount: result.text.split(/\s+/).filter((w: string) => w.length > 0).length
     }));
+  }
+
+  getWordCount(text: string): number {
+    return text.split(/\s+/).filter((w: string) => w.length > 0).length;
   }
 
   async runAllEngines(): Promise<void> {
