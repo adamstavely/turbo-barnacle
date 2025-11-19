@@ -9,7 +9,9 @@ import { WarpToolsPanelComponent } from '../warp-tools-panel/warp-tools-panel.co
 import { BoundingBoxEditorComponent } from '../bounding-box-editor/bounding-box-editor.component';
 import { ResultsPanelComponent } from '../results-panel/results-panel.component';
 import { TrapezoidalCorrectionComponent } from '../trapezoidal-correction/trapezoidal-correction.component';
+import { PolygonWarpComponent } from '../polygon-warp/polygon-warp.component';
 import { MatDialog } from '@angular/material/dialog';
+import { PolygonWarpService } from '../../services/polygon-warp.service';
 import { StateStoreService } from '../../services/state-store.service';
 import { PerspectivePoints } from '../../services/geometric-transform.service';
 import { UndoRedoService } from '../../services/undo-redo.service';
@@ -185,6 +187,7 @@ export class OcrAppRootComponent implements OnInit {
     private ocrEngine: OcrEngineService,
     private imageProcessing: ImageProcessingService,
     private geometricTransform: GeometricTransformService,
+    private polygonWarp: PolygonWarpService,
     private dialog: MatDialog
   ) {}
 
@@ -337,10 +340,15 @@ export class OcrAppRootComponent implements OnInit {
     const currentState = this.state();
     if (!currentState.currentImageData) return;
 
-    if (transform.openTrapezoidal) {
-      this.openTrapezoidalDialog();
-      return;
-    }
+      if (transform.openTrapezoidal) {
+        this.openTrapezoidalDialog();
+        return;
+      }
+
+      if (transform.openPolygonWarp) {
+        this.openPolygonWarpDialog();
+        return;
+      }
 
     let processed = currentState.currentImageData;
 
@@ -410,6 +418,42 @@ export class OcrAppRootComponent implements OnInit {
         );
         this.processedImageData.set(processed);
         this.stateStore.updateImageData(processed);
+      }
+    });
+  }
+
+  openPolygonWarpDialog(): void {
+    const currentState = this.state();
+    if (!currentState.currentImageData) return;
+
+    const dialogRef = this.dialog.open(PolygonWarpComponent, {
+      width: '90%',
+      maxWidth: '1200px',
+      height: '90%',
+      maxHeight: '800px',
+      data: {
+        imageData: currentState.currentImageData,
+        imageUrl: currentState.imageUrl,
+        canvasWidth: Math.min(currentState.width, 800),
+        canvasHeight: Math.min(currentState.height, 600)
+      }
+    });
+
+    dialogRef.afterClosed().subscribe((result: any) => {
+      if (result && currentState.currentImageData) {
+        const warp = result as { sourcePoints: any[]; targetPoints: any[] };
+        try {
+          const processed = this.polygonWarp.applyLocalWarp(
+            currentState.currentImageData,
+            warp.sourcePoints,
+            warp.targetPoints
+          );
+          this.processedImageData.set(processed);
+          this.stateStore.updateImageData(processed);
+        } catch (error) {
+          console.error('Polygon warp failed:', error);
+          alert('Failed to apply polygon warp. Please try again.');
+        }
       }
     });
   }

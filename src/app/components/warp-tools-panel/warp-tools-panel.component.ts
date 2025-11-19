@@ -83,20 +83,32 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
         </button>
       </mat-expansion-panel>
 
-      <mat-expansion-panel>
-        <mat-expansion-panel-header>
-          <mat-panel-title>Perspective Correction</mat-panel-title>
-        </mat-expansion-panel-header>
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>Perspective Correction</mat-panel-title>
+            </mat-expansion-panel-header>
 
-        <p class="info-text">Adjust corner points for perspective correction</p>
-        <button mat-stroked-button (click)="onOpenTrapezoidal()" class="action-button">
-          <mat-icon>crop_free</mat-icon>
-          Open Trapezoidal Correction
-        </button>
-        <button mat-stroked-button (click)="onPerspectiveCorrection()" class="action-button">
-          Apply Perspective Correction
-        </button>
-      </mat-expansion-panel>
+            <p class="info-text">Adjust corner points for perspective correction</p>
+            <button mat-stroked-button (click)="onOpenTrapezoidal()" class="action-button">
+              <mat-icon>crop_free</mat-icon>
+              Open Trapezoidal Correction
+            </button>
+            <button mat-stroked-button (click)="onPerspectiveCorrection()" class="action-button">
+              Apply Perspective Correction
+            </button>
+          </mat-expansion-panel>
+
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>Local Region Warping</mat-panel-title>
+            </mat-expansion-panel-header>
+
+            <p class="info-text">Select a polygon region and warp it locally</p>
+            <button mat-stroked-button (click)="onOpenPolygonWarp()" class="action-button">
+              <mat-icon>transform</mat-icon>
+              Open Polygon Warp
+            </button>
+          </mat-expansion-panel>
 
       <mat-expansion-panel>
         <mat-expansion-panel-header>
@@ -192,6 +204,7 @@ export class WarpToolsPanelComponent {
     pincushion?: number;
     autoDeskew?: boolean;
     openTrapezoidal?: boolean;
+    openPolygonWarp?: boolean;
     reset?: boolean;
   }>();
 
@@ -218,15 +231,19 @@ export class WarpToolsPanelComponent {
     this.transformChange.emit({ autoDeskew: true });
   }
 
-  onOpenTrapezoidal(): void {
-    this.transformChange.emit({ openTrapezoidal: true });
-  }
+      onOpenTrapezoidal(): void {
+        this.transformChange.emit({ openTrapezoidal: true });
+      }
 
-  onPerspectiveCorrection(): void {
-    // This would typically be handled by canvas interaction
-    // For now, emit event to trigger perspective correction UI
-    this.transformChange.emit({ perspective: undefined });
-  }
+      onOpenPolygonWarp(): void {
+        this.transformChange.emit({ openPolygonWarp: true });
+      }
+
+      onPerspectiveCorrection(): void {
+        // This would typically be handled by canvas interaction
+        // For now, emit event to trigger perspective correction UI
+        this.transformChange.emit({ perspective: undefined });
+      }
 
   onLensDistortionChange(): void {
     this.transformChange.emit({ barrel: this.barrel, pincushion: this.pincushion });
