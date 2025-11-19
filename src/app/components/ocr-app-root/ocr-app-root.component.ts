@@ -307,8 +307,19 @@ export class OcrAppRootComponent implements OnInit {
         );
       }
       if (transform.autoDeskew) {
-        const angle = this.geometricTransform.autoDeskew(processed);
-        processed = this.geometricTransform.rotate(processed, -angle);
+        // Use async deskew detection with worker
+        this.geometricTransform.autoDeskewAsync(processed).then(angle => {
+          const corrected = this.geometricTransform.rotate(processed, -angle);
+          this.processedImageData.set(corrected);
+          this.stateStore.updateImageData(corrected);
+        }).catch(() => {
+          // Fallback to synchronous
+          const angle = this.geometricTransform.autoDeskew(processed);
+          const corrected = this.geometricTransform.rotate(processed, -angle);
+          this.processedImageData.set(corrected);
+          this.stateStore.updateImageData(corrected);
+        });
+        return; // Don't update synchronously for async operation
       }
       if (transform.perspective) {
         processed = this.geometricTransform.applyPerspectiveCorrection(processed, transform.perspective);

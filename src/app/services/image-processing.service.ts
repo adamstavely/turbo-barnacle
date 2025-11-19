@@ -1,10 +1,12 @@
 import { Injectable } from '@angular/core';
 import { getPixel, setPixel, interpolateBilinear } from '../utils/math-helpers';
+import { WorkerManagerService } from './worker-manager.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ImageProcessingService {
+  constructor(private workerManager?: WorkerManagerService) {}
   
   applyBrightness(imageData: ImageData, value: number): ImageData {
     const result = new ImageData(imageData.width, imageData.height);
@@ -430,6 +432,36 @@ export class ImageProcessingService {
     }
 
     return result;
+  }
+
+  async applyDenoiseBilateralAsync(imageData: ImageData, spatialSigma: number = 5, colorSigma: number = 50): Promise<ImageData> {
+    if (this.workerManager) {
+      try {
+        const worker = await this.workerManager.getFilterWorker();
+        return new Promise((resolve, reject) => {
+          worker.onmessage = (event) => {
+            if (event.data.type === 'process') {
+              resolve(event.data.result);
+            } else if (event.data.type === 'error') {
+              reject(new Error(event.data.error));
+            }
+          };
+          worker.onerror = reject;
+          worker.postMessage({
+            type: 'process',
+            payload: {
+              imageData,
+              filter: 'bilateral',
+              params: { spatialSigma, colorSigma }
+            }
+          }, [imageData.data.buffer]);
+        });
+      } catch (error) {
+        console.warn('Worker failed, falling back to synchronous processing:', error);
+      }
+    }
+    // Fallback to synchronous processing
+    return this.applyDenoiseBilateral(imageData, spatialSigma, colorSigma);
   }
 
   applyDenoiseBilateral(imageData: ImageData, spatialSigma: number = 5, colorSigma: number = 50): ImageData {

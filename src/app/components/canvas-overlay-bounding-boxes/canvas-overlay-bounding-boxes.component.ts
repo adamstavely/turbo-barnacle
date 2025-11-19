@@ -56,6 +56,7 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
   private isCreating = false;
   private createStartX = 0;
   private createStartY = 0;
+  private originalAspectRatio = 1;
 
   ngAfterViewInit(): void {
     const canvas = this.overlayCanvasRef?.nativeElement;
@@ -117,6 +118,9 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
       this.isResizing = true;
       this.resizeHandle = handle;
       this.selectedBox = this.boundingBoxes.find(b => b.id === this.selectedBoxId) || null;
+      if (this.selectedBox) {
+        this.originalAspectRatio = this.selectedBox.width / this.selectedBox.height;
+      }
       this.dragStartX = x;
       this.dragStartY = y;
       return;
@@ -145,7 +149,7 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
     const y = (event.clientY - rect.top) / this.scaleY;
 
     if (this.isResizing && this.selectedBox && this.resizeHandle) {
-      this.handleResize(x, y);
+      this.handleResize(x, y, event.shiftKey);
       this.draw();
     } else if (this.isDragging && this.selectedBox) {
       const dx = x - this.dragStartX;
@@ -310,7 +314,7 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
     return cursors[handle] || 'default';
   }
 
-  private handleResize(x: number, y: number): void {
+  private handleResize(x: number, y: number, preserveAspect: boolean = false): void {
     if (!this.selectedBox || !this.resizeHandle) return;
 
     let newX = this.selectedBox.x;
@@ -320,6 +324,8 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
 
     const dx = x - this.dragStartX;
     const dy = y - this.dragStartY;
+    
+    const originalAspectRatio = this.selectedBox.width / this.selectedBox.height;
 
     switch (this.resizeHandle) {
       case 'nw':
@@ -327,20 +333,46 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
         newY = this.selectedBox.y + dy;
         newWidth = this.selectedBox.width - dx;
         newHeight = this.selectedBox.height - dy;
+        if (preserveAspect) {
+          const aspectChange = newWidth / newHeight;
+          if (Math.abs(aspectChange - originalAspectRatio) > 0.1) {
+            newHeight = newWidth / originalAspectRatio;
+            newY = this.selectedBox.y + this.selectedBox.height - newHeight;
+          }
+        }
         break;
       case 'ne':
         newY = this.selectedBox.y + dy;
         newWidth = this.selectedBox.width + dx;
         newHeight = this.selectedBox.height - dy;
+        if (preserveAspect) {
+          const aspectChange = newWidth / newHeight;
+          if (Math.abs(aspectChange - originalAspectRatio) > 0.1) {
+            newHeight = newWidth / originalAspectRatio;
+            newY = this.selectedBox.y + this.selectedBox.height - newHeight;
+          }
+        }
         break;
       case 'sw':
         newX = this.selectedBox.x + dx;
         newWidth = this.selectedBox.width - dx;
         newHeight = this.selectedBox.height + dy;
+        if (preserveAspect) {
+          const aspectChange = newWidth / newHeight;
+          if (Math.abs(aspectChange - originalAspectRatio) > 0.1) {
+            newHeight = newWidth / originalAspectRatio;
+          }
+        }
         break;
       case 'se':
         newWidth = this.selectedBox.width + dx;
         newHeight = this.selectedBox.height + dy;
+        if (preserveAspect) {
+          const aspectChange = newWidth / newHeight;
+          if (Math.abs(aspectChange - originalAspectRatio) > 0.1) {
+            newHeight = newWidth / originalAspectRatio;
+          }
+        }
         break;
       case 'n':
         newY = this.selectedBox.y + dy;

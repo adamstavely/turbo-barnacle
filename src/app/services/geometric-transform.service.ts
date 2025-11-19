@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { applyMatrix3x3, getPixel, setPixel, interpolateBilinear, InterpolationMethod } from '../utils/math-helpers';
+import { WorkerManagerService } from './worker-manager.service';
 
 export interface PerspectivePoints {
   topLeft: { x: number; y: number };
@@ -12,6 +13,7 @@ export interface PerspectivePoints {
   providedIn: 'root'
 })
 export class GeometricTransformService {
+  constructor(private workerManager?: WorkerManagerService) {}
   
   rotate(imageData: ImageData, angle: number, method: InterpolationMethod = 'bilinear'): ImageData {
     const radians = (angle * Math.PI) / 180;
@@ -135,6 +137,32 @@ export class GeometricTransformService {
     // Simplified solver - in production use proper SVD
     // Returns identity for now
     return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  }
+
+  async autoDeskewAsync(imageData: ImageData): Promise<number> {
+    if (this.workerManager) {
+      try {
+        const worker = await this.workerManager.getDeskewWorker();
+        return new Promise((resolve, reject) => {
+          worker.onmessage = (event) => {
+            if (event.data.type === 'detect') {
+              resolve(event.data.angle);
+            } else if (event.data.type === 'error') {
+              reject(new Error(event.data.error));
+            }
+          };
+          worker.onerror = reject;
+          worker.postMessage({
+            type: 'detect',
+            payload: { imageData }
+          }, [imageData.data.buffer]);
+        });
+      } catch (error) {
+        console.warn('Worker failed, falling back to synchronous processing:', error);
+      }
+    }
+    // Fallback to synchronous processing
+    return this.autoDeskew(imageData);
   }
 
   autoDeskew(imageData: ImageData): number {
