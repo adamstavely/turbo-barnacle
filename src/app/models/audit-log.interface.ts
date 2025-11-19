@@ -1,6 +1,6 @@
 export interface AuditLogEntry {
   id?: number;
-  timestamp: number;
+  timestamp?: number; // Optional - service will add if missing
   userId?: string;
   action: 'ocr' | 'preprocessing' | 'bounding_box_edit' | 'export' | 'mask' | 'other';
   engine?: string;

@@ -133,6 +133,7 @@ export class SignatureDetectorComponent {
   @Input() imageData: ImageData | null = null;
   @Output() signatureSelected = new EventEmitter<Signature>();
   @Output() signatureExported = new EventEmitter<{ signature: Signature; blob: Blob }>();
+  @Output() signaturesDetected = new EventEmitter<Signature[]>();
 
   signatures = signal<Signature[]>([]);
   isDetecting = signal(false);
@@ -151,6 +152,7 @@ export class SignatureDetectorComponent {
     try {
       const detected = await this.signatureDetection.detectSignatures(this.imageData);
       this.signatures.set(detected);
+      this.signaturesDetected.emit(detected);
     } catch (error) {
       console.error('Signature detection failed:', error);
       alert('Failed to detect signatures. Please try again.');

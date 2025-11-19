@@ -429,12 +429,16 @@ export class EnhancementToolsPanelComponent {
         this.transformChange.emit({ moireIntensity: value });
       }
 
-      onColorChannelChange(value: 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel' | null): void {
-        this.transformChange.emit({ colorChannel: value === 'null' ? null : value });
+      onColorChannelChange(value: string): void {
+        const channelValue = value === 'null' || value === null ? null : value as 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel';
+        this.colorChannel = channelValue;
+        this.transformChange.emit({ colorChannel: channelValue });
       }
 
-      onHighlightRemovalChange(value: 'soft' | 'medium' | 'aggressive' | null): void {
-        this.transformChange.emit({ highlightRemoval: value === 'null' ? null : value });
+      onHighlightRemovalChange(value: string): void {
+        const removalValue = value === 'null' || value === null ? null : value as 'soft' | 'medium' | 'aggressive';
+        this.highlightRemoval = removalValue;
+        this.transformChange.emit({ highlightRemoval: removalValue });
       }
 
       onReset(): void {

@@ -21,7 +21,7 @@ import { MaskRegion } from '../../models/mask-region.interface';
     <div class="mask-tool-panel">
       <div class="header">
         <h3>Secure Sandbox Mode</h3>
-        <button mat-raised-button color="warn" (click)="clearAllMasks()" [disabled]="maskRegions().length === 0">
+        <button mat-raised-button color="warn" (click)="clearAllMasks()" [disabled]="maskRegions.length === 0">
           <mat-icon>clear</mat-icon>
           Clear All
         </button>
@@ -33,11 +33,11 @@ import { MaskRegion } from '../../models/mask-region.interface';
             Draw rectangles over sensitive data regions. Masked areas will be excluded from OCR processing.
           </p>
 
-          <div class="mask-list">
-            @if (maskRegions().length === 0) {
-              <p class="empty-state">No masks defined. Click and drag on the canvas to create a mask.</p>
-            } @else {
-              @for (region of maskRegions(); track region.id) {
+            <div class="mask-list">
+              @if (maskRegions.length === 0) {
+                <p class="empty-state">No masks defined. Click and drag on the canvas to create a mask.</p>
+              } @else {
+                @for (region of maskRegions; track region.id) {
                 <div class="mask-item">
                   <mat-chip>
                     Mask {{ $index + 1 }}: ({{ region.x | number:'1.0-0' }}, {{ region.y | number:'1.0-0' }}) 
@@ -114,7 +114,7 @@ import { MaskRegion } from '../../models/mask-region.interface';
   `]
 })
 export class MaskToolComponent {
-  @Input() maskRegions: () => MaskRegion[] = () => [];
+  @Input() maskRegions: MaskRegion[] = [];
   @Output() maskRegionAdded = new EventEmitter<MaskRegion>();
   @Output() maskRegionRemoved = new EventEmitter<string>();
   @Output() maskModeToggled = new EventEmitter<boolean>();

@@ -118,7 +118,7 @@ import { OcrResult } from '../../models/ocr-result.interface';
                 (recommendationsApplied)="onAutoCleanApplied($event)">
               </app-auto-clean>
               <app-mask-tool
-                [maskRegions]="() => maskService.getMaskRegions()"
+                [maskRegions]="getMaskRegions()"
                 (maskRegionAdded)="onMaskRegionAdded($event)"
                 (maskRegionRemoved)="onMaskRegionRemoved($event)"
                 (maskModeToggled)="onMaskModeToggled($event)"
@@ -127,7 +127,8 @@ import { OcrResult } from '../../models/ocr-result.interface';
               <app-signature-detector
                 [imageData]="processedImageData()"
                 (signatureSelected)="onSignatureSelected($event)"
-                (signatureExported)="onSignatureExported($event)">
+                (signatureExported)="onSignatureExported($event)"
+                (signaturesDetected)="onSignaturesDetected($event)">
               </app-signature-detector>
             </div>
 
@@ -879,7 +880,13 @@ export class OcrAppRootComponent implements OnInit {
 
       const blob = await imageDataToBlob(imageData);
       const options = this.currentOcrOptions();
-      const result = await this.ocrEngine.performOCR(blob, options);
+      let result = await this.ocrEngine.performOCR(blob, options);
+      
+      // Exclude signature regions from OCR results
+      const signatures = this.detectedSignatures();
+      if (signatures.length > 0) {
+        result = this.filterOutSignatureRegions(result, signatures);
+      }
       
       this.stateStore.addOcrResult(result);
     } catch (error) {
@@ -888,6 +895,30 @@ export class OcrAppRootComponent implements OnInit {
     } finally {
       this.isProcessing.set(false);
     }
+  }
+
+  private filterOutSignatureRegions(result: OcrResult, signatures: Signature[]): OcrResult {
+    // Remove bounding boxes that overlap with signature regions
+    const filteredBoxes = result.boundingBoxes.filter(box => {
+      return !signatures.some(sig => this.isOverlapping(box, sig.boundingBox));
+    });
+
+    // Reconstruct text from remaining boxes
+    const filteredText = filteredBoxes.map(box => box.text).join(' ');
+
+    return {
+      ...result,
+      text: filteredText,
+      boundingBoxes: filteredBoxes
+    };
+  }
+
+  private isOverlapping(box1: { x: number; y: number; width: number; height: number },
+                       box2: { x: number; y: number; width: number; height: number }): boolean {
+    return !(box1.x + box1.width < box2.x ||
+             box2.x + box2.width < box1.x ||
+             box1.y + box1.height < box2.y ||
+             box2.y + box2.height < box1.y);
   }
 
   onBoxSelected(boxId: string): void {
@@ -1090,11 +1121,26 @@ export class OcrAppRootComponent implements OnInit {
     if (!existingBox) {
       this.stateStore.addBoundingBox(signature.boundingBox);
     }
+    // Update detected signatures list
+    this.detectedSignatures.update(sigs => {
+      if (!sigs.find(s => s.id === signature.id)) {
+        return [...sigs, signature];
+      }
+      return sigs;
+    });
   }
 
   onSignatureExported(event: { signature: Signature; blob: Blob }): void {
     // Log export action
     this.auditLog.logExport('signature', 'png').catch(err => console.error('Failed to log export:', err));
+  }
+
+  onSignaturesDetected(signatures: Signature[]): void {
+    this.detectedSignatures.set(signatures);
+  }
+
+  getMaskRegions(): MaskRegion[] {
+    return this.maskService.getMaskRegions();
   }
 }
 

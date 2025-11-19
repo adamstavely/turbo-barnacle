@@ -1,4 +1,4 @@
-import { Component, Input, signal, HostListener } from '@angular/core';
+import { Component, Input, signal, HostListener, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -71,23 +71,18 @@ import { CommonModule } from '@angular/common';
     }
   `]
 })
-export class MagnifierLensComponent {
+export class MagnifierLensComponent implements AfterViewInit, OnDestroy {
   @Input() sourceCanvas: HTMLCanvasElement | null = null;
   @Input() lensSize = 200;
+  
+  @ViewChild('magnifierCanvas', { static: false }) canvasRef!: ElementRef<HTMLCanvasElement>;
   
   isEnabled = signal(false);
   position = signal({ x: 0, y: 0 });
   zoomLevel = signal(2);
   private zoomLevels = [2, 4, 8];
   private currentZoomIndex = 0;
-
-  @HostListener('mousemove', ['$event'])
-  onMouseMove(event: MouseEvent): void {
-    if (!this.isEnabled()) return;
-    
-    this.position.set({ x: event.clientX, y: event.clientY });
-    this.updateMagnifier();
-  }
+  private mouseMoveHandler: ((event: MouseEvent) => void) | null = null;
 
   @HostListener('document:mousemove', ['$event'])
   onDocumentMouseMove(event: MouseEvent): void {
@@ -119,10 +114,22 @@ export class MagnifierLensComponent {
     }
   }
 
+  ngAfterViewInit(): void {
+    // Start listening to mouse moves when component is initialized
+    this.mouseMoveHandler = this.onDocumentMouseMove.bind(this);
+    document.addEventListener('mousemove', this.mouseMoveHandler);
+  }
+
+  ngOnDestroy(): void {
+    if (this.mouseMoveHandler) {
+      document.removeEventListener('mousemove', this.mouseMoveHandler);
+    }
+  }
+
   private updateMagnifier(): void {
     if (!this.sourceCanvas || !this.isEnabled()) return;
 
-    const canvas = document.querySelector('.magnifier-canvas') as HTMLCanvasElement;
+    const canvas = this.canvasRef?.nativeElement;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
