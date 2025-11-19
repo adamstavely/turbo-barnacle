@@ -617,6 +617,13 @@ export class OcrAppRootComponent implements OnInit {
     this.hoveredBoxId.set(boxId);
   }
 
+  onTableHighlighted(table: any): void {
+    // Highlight table bounding box
+    if (table.boundingBox) {
+      this.stateStore.setSelectedBox(table.boundingBox.id);
+    }
+  }
+
   onUndo(): void {
     const previousState = this.undoRedo.undo(this.stateStore.getState()());
     if (previousState) {
