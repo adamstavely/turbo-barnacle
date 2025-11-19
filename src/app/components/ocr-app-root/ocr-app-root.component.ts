@@ -8,6 +8,7 @@ import { EnhancementToolsPanelComponent } from '../enhancement-tools-panel/enhan
 import { WarpToolsPanelComponent } from '../warp-tools-panel/warp-tools-panel.component';
 import { BoundingBoxEditorComponent } from '../bounding-box-editor/bounding-box-editor.component';
 import { ResultsPanelComponent } from '../results-panel/results-panel.component';
+import { TableDetectionComponent } from '../table-detection/table-detection.component';
 import { TrapezoidalCorrectionComponent } from '../trapezoidal-correction/trapezoidal-correction.component';
 import { PolygonWarpComponent } from '../polygon-warp/polygon-warp.component';
 import { MultiEngineComparisonComponent } from '../multi-engine-comparison/multi-engine-comparison.component';
@@ -38,7 +39,8 @@ import { OcrResult } from '../../models/ocr-result.interface';
     EnhancementToolsPanelComponent,
     WarpToolsPanelComponent,
     BoundingBoxEditorComponent,
-    ResultsPanelComponent
+    ResultsPanelComponent,
+    TableDetectionComponent
   ],
   template: `
     <div class="app-container">
@@ -74,6 +76,10 @@ import { OcrResult } from '../../models/ocr-result.interface';
                 (boxesMerged)="onBoxesMerged($event)"
                 (boxSplit)="onBoxSplit($event)">
               </app-bounding-box-editor>
+              <app-table-detection
+                [boundingBoxes]="state().boundingBoxes"
+                (tableHighlighted)="onTableHighlighted($event)">
+              </app-table-detection>
             </div>
 
             <div class="center-panel">
