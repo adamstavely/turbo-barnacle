@@ -43,6 +43,10 @@ import { EngineSelectorComponent } from '../engine-selector/engine-selector.comp
       <button mat-icon-button (click)="onClear()" [disabled]="!canClear">
         <mat-icon>clear</mat-icon>
       </button>
+      <button mat-raised-button color="accent" (click)="compareEngines.emit()" [disabled]="!canRunOcr">
+        <mat-icon>compare_arrows</mat-icon>
+        Compare
+      </button>
     </mat-toolbar>
   `,
   styles: [`
@@ -81,6 +85,7 @@ export class ToolbarComponent {
   @Output() undo = new EventEmitter<void>();
   @Output() redo = new EventEmitter<void>();
   @Output() clear = new EventEmitter<void>();
+  @Output() compareEngines = new EventEmitter<void>();
 
   onRunOcr(): void {
     this.runOcr.emit();
@@ -96,6 +101,10 @@ export class ToolbarComponent {
 
   onClear(): void {
     this.clear.emit();
+  }
+
+  onCompareEngines(): void {
+    this.compareEngines.emit();
   }
 }
 

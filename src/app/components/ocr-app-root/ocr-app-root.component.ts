@@ -10,6 +10,7 @@ import { BoundingBoxEditorComponent } from '../bounding-box-editor/bounding-box-
 import { ResultsPanelComponent } from '../results-panel/results-panel.component';
 import { TrapezoidalCorrectionComponent } from '../trapezoidal-correction/trapezoidal-correction.component';
 import { PolygonWarpComponent } from '../polygon-warp/polygon-warp.component';
+import { MultiEngineComparisonComponent } from '../multi-engine-comparison/multi-engine-comparison.component';
 import { MatDialog } from '@angular/material/dialog';
 import { PolygonWarpService } from '../../services/polygon-warp.service';
 import { StateStoreService } from '../../services/state-store.service';
@@ -20,6 +21,7 @@ import { ImageProcessingService } from '../../services/image-processing.service'
 import { GeometricTransformService } from '../../services/geometric-transform.service';
 import { imageDataToBlob } from '../../utils/image-helpers';
 import { BoundingBox } from '../../models/bounding-box.interface';
+import { OcrResult } from '../../models/ocr-result.interface';
 
 @Component({
   selector: 'app-ocr-app-root',
@@ -46,7 +48,8 @@ import { BoundingBox } from '../../models/bounding-box.interface';
         (runOcr)="onRunOcr()"
         (undo)="onUndo()"
         (redo)="onRedo()"
-        (clear)="onClear()">
+        (clear)="onClear()"
+        (compareEngines)="onCompareEngines()">
       </app-toolbar>
 
       <div class="main-content">
@@ -418,6 +421,27 @@ export class OcrAppRootComponent implements OnInit {
         );
         this.processedImageData.set(processed);
         this.stateStore.updateImageData(processed);
+      }
+    });
+  }
+
+  onCompareEngines(): void {
+    const currentState = this.state();
+    if (!currentState.currentImageData) return;
+
+    const dialogRef = this.dialog.open(MultiEngineComparisonComponent, {
+      width: '90%',
+      maxWidth: '1400px',
+      height: '90%',
+      maxHeight: '900px',
+      data: {
+        imageData: currentState.currentImageData
+      }
+    });
+
+    dialogRef.afterClosed().subscribe((result: OcrResult | null) => {
+      if (result) {
+        this.stateStore.addOcrResult(result);
       }
     });
   }
