@@ -80,8 +80,6 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
     if (!selectedBox) return;
 
     const step = event.shiftKey ? 10 : 1;
-
-    const step = event.shiftKey ? 10 : 1;
     let newX = selectedBox.x;
     let newY = selectedBox.y;
 

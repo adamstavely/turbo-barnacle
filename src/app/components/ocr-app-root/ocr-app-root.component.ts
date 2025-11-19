@@ -217,9 +217,10 @@ export class OcrAppRootComponent implements OnInit {
     }
 
     // Delete/Backspace: Delete selected bounding box
-    if ((event.key === 'Delete' || event.key === 'Backspace') && this.state().selectedBoxId) {
+    const selectedBoxId = this.state().selectedBoxId;
+    if ((event.key === 'Delete' || event.key === 'Backspace') && selectedBoxId) {
       event.preventDefault();
-      this.onBoxDeleted(this.state().selectedBoxId);
+      this.onBoxDeleted(selectedBoxId);
       return;
     }
 
