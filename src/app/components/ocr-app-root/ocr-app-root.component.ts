@@ -15,6 +15,7 @@ import { MeshWarpEditorComponent } from '../mesh-warp-editor/mesh-warp-editor.co
 import { MatDialog } from '@angular/material/dialog';
 import { PolygonWarpService } from '../../services/polygon-warp.service';
 import { WarpMeshService } from '../../services/warp-mesh.service';
+import { TextLineStraighteningService } from '../../services/text-line-straightening.service';
 import { StateStoreService } from '../../services/state-store.service';
 import { PerspectivePoints } from '../../services/geometric-transform.service';
 import { UndoRedoService } from '../../services/undo-redo.service';
@@ -194,6 +195,7 @@ export class OcrAppRootComponent implements OnInit {
     private geometricTransform: GeometricTransformService,
     private polygonWarp: PolygonWarpService,
     private warpMesh: WarpMeshService,
+    private textLineStraightening: TextLineStraighteningService,
     private dialog: MatDialog
   ) {}
 
@@ -365,6 +367,17 @@ export class OcrAppRootComponent implements OnInit {
 
       if (transform.curvatureFlattening !== undefined) {
         processed = this.warpMesh.applyCurvatureFlattening(processed, transform.curvatureFlattening);
+      }
+
+      if (transform.straightenTextLines) {
+        // Use bounding boxes from OCR results if available
+        const boundingBoxes = currentState.boundingBoxes;
+        if (boundingBoxes.length > 0) {
+          processed = this.textLineStraightening.straightenAllTextLines(processed, boundingBoxes);
+        } else {
+          alert('No text detected. Please run OCR first to detect text lines.');
+          return;
+        }
       }
 
     if (transform.reset) {

@@ -2,7 +2,9 @@ import { Component, EventEmitter, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatDialog } from '@angular/material/dialog';
 import { PdfRasterizerService } from '../../services/pdf-rasterizer.service';
+import { MultiPagePdfComponent } from '../multi-page-pdf/multi-page-pdf.component';
 import { loadImageFromFile, imageToImageData, scaleImageData } from '../../utils/image-helpers';
 
 @Component({
@@ -86,7 +88,10 @@ export class ImageLoaderComponent {
 
   isDragOver = false;
 
-  constructor(private pdfRasterizer: PdfRasterizerService) {}
+  constructor(
+    private pdfRasterizer: PdfRasterizerService,
+    private dialog: MatDialog
+  ) {}
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();
@@ -126,12 +131,41 @@ export class ImageLoaderComponent {
       let imageUrl: string;
 
       if (file.type === 'application/pdf') {
-        // Handle PDF
-        const result = await this.pdfRasterizer.rasterizePdf(file, 1);
-        imageData = result.imageData;
-        width = result.width;
-        height = result.height;
-        imageUrl = URL.createObjectURL(file);
+        // Check if PDF has multiple pages
+        const pageCount = await this.pdfRasterizer.getPdfPageCount(file);
+        if (pageCount > 1) {
+          // Open multi-page dialog
+          const dialogRef = this.dialog.open(MultiPagePdfComponent, {
+            width: '90%',
+            maxWidth: '1400px',
+            height: '90%',
+            data: { file }
+          });
+
+          dialogRef.afterClosed().subscribe((result: any) => {
+            if (result && result.imageData) {
+              const scaledImageData = scaleImageData(result.imageData, 2000);
+              const scaleFactor = scaledImageData.width / result.imageData.width;
+              
+              this.imageLoaded.emit({
+                imageData: scaledImageData,
+                imageUrl: URL.createObjectURL(file),
+                fileName: `${file.name} (Page ${result.pageNumber})`,
+                fileType: file.type,
+                width: scaledImageData.width,
+                height: scaledImageData.height
+              });
+            }
+          });
+          return; // Don't process synchronously
+        } else {
+          // Single page PDF - process directly
+          const result = await this.pdfRasterizer.rasterizePdf(file, 1);
+          imageData = result.imageData;
+          width = result.width;
+          height = result.height;
+          imageUrl = URL.createObjectURL(file);
+        }
       } else {
         // Handle image files
         const img = await loadImageFromFile(file);

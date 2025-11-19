@@ -141,6 +141,18 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
             </div>
           </mat-expansion-panel>
 
+          <mat-expansion-panel>
+            <mat-expansion-panel-header>
+              <mat-panel-title>Text Line Straightening</mat-panel-title>
+            </mat-expansion-panel-header>
+
+            <p class="info-text">Straighten curved text lines</p>
+            <button mat-stroked-button (click)="onStraightenTextLines()" class="action-button">
+              <mat-icon>format_align_left</mat-icon>
+              Straighten Text Lines
+            </button>
+          </mat-expansion-panel>
+
       <mat-expansion-panel>
         <mat-expansion-panel-header>
           <mat-panel-title>Lens Distortion</mat-panel-title>
@@ -238,6 +250,7 @@ export class WarpToolsPanelComponent {
     openPolygonWarp?: boolean;
     openMeshWarp?: boolean;
     curvatureFlattening?: number;
+    straightenTextLines?: boolean;
     reset?: boolean;
   }>();
 
@@ -279,6 +292,10 @@ export class WarpToolsPanelComponent {
 
       onCurvatureChange(value: number): void {
         this.transformChange.emit({ curvatureFlattening: value });
+      }
+
+      onStraightenTextLines(): void {
+        this.transformChange.emit({ straightenTextLines: true });
       }
 
       onPerspectiveCorrection(): void {
