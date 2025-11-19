@@ -38,9 +38,8 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
             [min]="-180"
             [max]="180"
             [step]="1"
-            [discrete]="true"
-            [(ngModel)]="rotation"
-            (ngModelChange)="onRotationChange($event)">
+            [discrete]="true">
+            <input matSliderThumb [value]="rotation" (valueChange)="onRotationChange($event)" />
           </mat-slider>
         </div>
 
@@ -50,9 +49,8 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
             [min]="0.1"
             [max]="3"
             [step]="0.01"
-            [discrete]="true"
-            [(ngModel)]="scaleX"
-            (ngModelChange)="onScaleChange()">
+            [discrete]="true">
+            <input matSliderThumb [value]="scaleX" (valueChange)="scaleX = $event; onScaleChange()" />
           </mat-slider>
         </div>
 
@@ -62,9 +60,8 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
             [min]="0.1"
             [max]="3"
             [step]="0.01"
-            [discrete]="true"
-            [(ngModel)]="scaleY"
-            (ngModelChange)="onScaleChange()">
+            [discrete]="true">
+            <input matSliderThumb [value]="scaleY" (valueChange)="scaleY = $event; onScaleChange()" />
           </mat-slider>
         </div>
 
@@ -134,9 +131,8 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
                 [min]="0"
                 [max]="0.5"
                 [step]="0.01"
-                [discrete]="true"
-                [(ngModel)]="curvature"
-                (ngModelChange)="onCurvatureChange($event)">
+                [discrete]="true">
+                <input matSliderThumb [value]="curvature" (valueChange)="onCurvatureChange($event)" />
               </mat-slider>
             </div>
           </mat-expansion-panel>
@@ -164,9 +160,8 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
             [min]="-0.5"
             [max]="0.5"
             [step]="0.01"
-            [discrete]="true"
-            [(ngModel)]="barrel"
-            (ngModelChange)="onLensDistortionChange()">
+            [discrete]="true">
+            <input matSliderThumb [value]="barrel" (valueChange)="barrel = $event; onLensDistortionChange()" />
           </mat-slider>
         </div>
 
@@ -176,9 +171,8 @@ import { PerspectivePoints } from '../../services/geometric-transform.service';
             [min]="-0.5"
             [max]="0.5"
             [step]="0.01"
-            [discrete]="true"
-            [(ngModel)]="pincushion"
-            (ngModelChange)="onLensDistortionChange()">
+            [discrete]="true">
+            <input matSliderThumb [value]="pincushion" (valueChange)="pincushion = $event; onLensDistortionChange()" />
           </mat-slider>
         </div>
       </mat-expansion-panel>
@@ -263,6 +257,7 @@ export class WarpToolsPanelComponent {
   curvature = 0;
 
   onRotationChange(value: number): void {
+    this.rotation = value;
     this.transformChange.emit({ rotation: value });
   }
 
@@ -290,9 +285,10 @@ export class WarpToolsPanelComponent {
         this.transformChange.emit({ openMeshWarp: true });
       }
 
-      onCurvatureChange(value: number): void {
-        this.transformChange.emit({ curvatureFlattening: value });
-      }
+  onCurvatureChange(value: number): void {
+    this.curvature = value;
+    this.transformChange.emit({ curvatureFlattening: value });
+  }
 
       onStraightenTextLines(): void {
         this.transformChange.emit({ straightenTextLines: true });

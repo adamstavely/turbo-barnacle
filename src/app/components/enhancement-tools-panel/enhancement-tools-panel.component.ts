@@ -39,9 +39,8 @@ import { MatSelectModule } from '@angular/material/select';
             [max]="1"
             [step]="0.01"
             [discrete]="true"
-            [showTickMarks]="true"
-            [(ngModel)]="brightness"
-            (ngModelChange)="onBrightnessChange($event)">
+            [showTickMarks]="true">
+            <input matSliderThumb [value]="brightness" (valueChange)="onBrightnessChange($event)" />
           </mat-slider>
         </div>
 
@@ -52,9 +51,8 @@ import { MatSelectModule } from '@angular/material/select';
             [max]="1"
             [step]="0.01"
             [discrete]="true"
-            [showTickMarks]="true"
-            [(ngModel)]="contrast"
-            (ngModelChange)="onContrastChange($event)">
+            [showTickMarks]="true">
+            <input matSliderThumb [value]="contrast" (valueChange)="onContrastChange($event)" />
           </mat-slider>
         </div>
 
@@ -65,9 +63,8 @@ import { MatSelectModule } from '@angular/material/select';
             [max]="1"
             [step]="0.01"
             [discrete]="true"
-            [showTickMarks]="true"
-            [(ngModel)]="saturation"
-            (ngModelChange)="onSaturationChange($event)">
+            [showTickMarks]="true">
+            <input matSliderThumb [value]="saturation" (valueChange)="onSaturationChange($event)" />
           </mat-slider>
         </div>
 
@@ -78,9 +75,8 @@ import { MatSelectModule } from '@angular/material/select';
             [max]="3"
             [step]="0.1"
             [discrete]="true"
-            [showTickMarks]="true"
-            [(ngModel)]="gamma"
-            (ngModelChange)="onGammaChange($event)">
+            [showTickMarks]="true">
+            <input matSliderThumb [value]="gamma" (valueChange)="onGammaChange($event)" />
           </mat-slider>
         </div>
 
@@ -123,9 +119,8 @@ import { MatSelectModule } from '@angular/material/select';
             [min]="0"
             [max]="1"
             [step]="0.01"
-            [discrete]="true"
-            [(ngModel)]="sharpen"
-            (ngModelChange)="onSharpenChange($event)">
+            [discrete]="true">
+            <input matSliderThumb [value]="sharpen" (valueChange)="onSharpenChange($event)" />
           </mat-slider>
         </div>
 
@@ -135,9 +130,8 @@ import { MatSelectModule } from '@angular/material/select';
             [min]="0"
             [max]="5"
             [step]="0.1"
-            [discrete]="true"
-            [(ngModel)]="denoise"
-            (ngModelChange)="onDenoiseChange($event)">
+            [discrete]="true">
+            <input matSliderThumb [value]="denoise" (valueChange)="onDenoiseChange($event)" />
           </mat-slider>
         </div>
 
@@ -160,9 +154,8 @@ import { MatSelectModule } from '@angular/material/select';
             [min]="0"
             [max]="2"
             [step]="0.1"
-            [discrete]="true"
-            [(ngModel)]="edgeEnhancement"
-            (ngModelChange)="onEdgeEnhancementChange($event)">
+            [discrete]="true">
+            <input matSliderThumb [value]="edgeEnhancement" (valueChange)="onEdgeEnhancementChange($event)" />
           </mat-slider>
         </div>
 
@@ -173,9 +166,8 @@ import { MatSelectModule } from '@angular/material/select';
             [max]="100"
             [step]="1"
             [discrete]="true"
-            [showTickMarks]="true"
-            [(ngModel)]="moireIntensity"
-            (ngModelChange)="onMoireIntensityChange($event)">
+            [showTickMarks]="true">
+            <input matSliderThumb [value]="moireIntensity" (valueChange)="onMoireIntensityChange($event)" />
           </mat-slider>
         </div>
       </mat-expansion-panel>
@@ -201,9 +193,8 @@ import { MatSelectModule } from '@angular/material/select';
                 [min]="1"
                 [max]="4"
                 [step]="0.5"
-                [discrete]="true"
-                [(ngModel)]="superResolutionScale"
-                (ngModelChange)="onSuperResolutionChange($event)">
+                [discrete]="true">
+                <input matSliderThumb [value]="superResolutionScale" (valueChange)="onSuperResolutionChange($event)" />
               </mat-slider>
             </div>
             <button mat-stroked-button (click)="onApplySuperResolution()" class="action-button">
@@ -253,9 +244,8 @@ import { MatSelectModule } from '@angular/material/select';
             [min]="0"
             [max]="10"
             [step]="0.5"
-            [discrete]="true"
-            [(ngModel)]="bilateralDenoise"
-            (ngModelChange)="onBilateralDenoiseChange($event)">
+            [discrete]="true">
+            <input matSliderThumb [value]="bilateralDenoise" (valueChange)="onBilateralDenoiseChange($event)" />
           </mat-slider>
         </div>
       </mat-expansion-panel>
@@ -351,26 +341,32 @@ export class EnhancementToolsPanelComponent {
       highlightRemoval: 'soft' | 'medium' | 'aggressive' | null = null;
 
   onBrightnessChange(value: number): void {
+    this.brightness = value;
     this.transformChange.emit({ brightness: value });
   }
 
   onContrastChange(value: number): void {
+    this.contrast = value;
     this.transformChange.emit({ contrast: value });
   }
 
   onSaturationChange(value: number): void {
+    this.saturation = value;
     this.transformChange.emit({ saturation: value });
   }
 
   onGammaChange(value: number): void {
+    this.gamma = value;
     this.transformChange.emit({ gamma: value });
   }
 
   onSharpenChange(value: number): void {
+    this.sharpen = value;
     this.transformChange.emit({ sharpen: value });
   }
 
   onDenoiseChange(value: number): void {
+    this.denoise = value;
     this.transformChange.emit({ denoise: value });
   }
 
@@ -387,6 +383,7 @@ export class EnhancementToolsPanelComponent {
   }
 
   onEdgeEnhancementChange(value: number): void {
+    this.edgeEnhancement = value;
     this.transformChange.emit({ edgeEnhancement: value });
   }
 
@@ -407,6 +404,7 @@ export class EnhancementToolsPanelComponent {
   }
 
       onBilateralDenoiseChange(value: number): void {
+        this.bilateralDenoise = value;
         this.transformChange.emit({ bilateralDenoise: value });
       }
 
@@ -426,6 +424,7 @@ export class EnhancementToolsPanelComponent {
       }
 
       onMoireIntensityChange(value: number): void {
+        this.moireIntensity = value;
         this.transformChange.emit({ moireIntensity: value });
       }
 

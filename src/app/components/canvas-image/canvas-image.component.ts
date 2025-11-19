@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnChanges, SimpleChanges, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
+import { Component, Input, OnInit, OnChanges, SimpleChanges, ViewChild, ElementRef, AfterViewInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -34,6 +34,8 @@ export class CanvasImageComponent implements OnInit, OnChanges, AfterViewInit {
   displayWidth = 0;
   displayHeight = 0;
 
+  constructor(private cdr: ChangeDetectorRef) {}
+
   ngOnInit(): void {
     this.updateCanvas();
   }
@@ -62,29 +64,38 @@ export class CanvasImageComponent implements OnInit, OnChanges, AfterViewInit {
 
     if (this.imageData) {
       // Use ImageData directly
-      this.canvasWidth = this.imageData.width;
-      this.canvasHeight = this.imageData.height;
+      // Update canvas element synchronously for proper drawing
       canvas.width = this.imageData.width;
       canvas.height = this.imageData.height;
       ctx.putImageData(this.imageData, 0, 0);
+      // Defer template-bound property updates to avoid ExpressionChangedAfterItHasBeenCheckedError
+      setTimeout(() => {
+        this.canvasWidth = this.imageData!.width;
+        this.canvasHeight = this.imageData!.height;
+        this.calculateDisplaySize();
+        this.cdr.markForCheck();
+      }, 0);
     } else if (this.imageUrl) {
       // Load from URL
       const img = new Image();
       img.onload = () => {
-        this.canvasWidth = img.width;
-        this.canvasHeight = img.height;
+        // Update canvas element synchronously for proper drawing
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
-        this.calculateDisplaySize();
+        // Defer template-bound property updates to avoid ExpressionChangedAfterItHasBeenCheckedError
+        setTimeout(() => {
+          this.canvasWidth = img.width;
+          this.canvasHeight = img.height;
+          this.calculateDisplaySize();
+          this.cdr.markForCheck();
+        }, 0);
       };
       img.src = this.imageUrl;
       return;
     } else {
       return;
     }
-
-    this.calculateDisplaySize();
   }
 
   private calculateDisplaySize(): void {
