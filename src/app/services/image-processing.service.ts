@@ -599,7 +599,324 @@ export class ImageProcessingService {
    * Apply super-resolution upscaling (basic implementation)
    * Uses bicubic interpolation for upscaling
    */
+  async removeMoireAsync(imageData: ImageData, intensity: number): Promise<ImageData> {
+    if (this.workerManager) {
+      try {
+        const worker = await this.workerManager.getMoireWorker();
+        return new Promise((resolve, reject) => {
+          worker.onmessage = (event) => {
+            if (event.data.type === 'process') {
+              resolve(event.data.result);
+            } else if (event.data.type === 'error') {
+              reject(new Error(event.data.error));
+            }
+          };
+          worker.onerror = reject;
+          worker.postMessage({
+            type: 'process',
+            payload: {
+              imageData,
+              intensity
+            }
+          }, [imageData.data.buffer]);
+        });
+      } catch (error) {
+        console.warn('Worker failed, falling back to synchronous processing:', error);
+      }
+    }
+    // Fallback to synchronous processing
+    return this.removeMoire(imageData, intensity);
+  }
+
+  removeMoire(imageData: ImageData, intensity: number): ImageData {
+    // Synchronous fallback implementation
+    const result = new ImageData(imageData.width, imageData.height);
+    result.data.set(imageData.data);
+    
+    if (intensity === 0) {
+      return result;
+    }
+    
+    const strength = intensity / 100;
+    const kernelSize = Math.max(3, Math.floor(5 * strength));
+    const halfKernel = Math.floor(kernelSize / 2);
+    
+    // Simple spatial domain notch filter
+    for (let y = halfKernel; y < imageData.height - halfKernel; y++) {
+      for (let x = halfKernel; x < imageData.width - halfKernel; x++) {
+        let rSum = 0, gSum = 0, bSum = 0;
+        let count = 0;
+        
+        // Average with edge-preserving
+        for (let dy = -halfKernel; dy <= halfKernel; dy++) {
+          for (let dx = -halfKernel; dx <= halfKernel; dx++) {
+            const px = x + dx;
+            const py = y + dy;
+            const idx = (py * imageData.width + px) * 4;
+            
+            // Weight by distance from center
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const weight = Math.exp(-dist * dist / (2 * strength * strength));
+            
+            rSum += imageData.data[idx] * weight;
+            gSum += imageData.data[idx + 1] * weight;
+            bSum += imageData.data[idx + 2] * weight;
+            count += weight;
+          }
+        }
+        
+        const idx = (y * imageData.width + x) * 4;
+        result.data[idx] = Math.max(0, Math.min(255, rSum / count));
+        result.data[idx + 1] = Math.max(0, Math.min(255, gSum / count));
+        result.data[idx + 2] = Math.max(0, Math.min(255, bSum / count));
+        result.data[idx + 3] = imageData.data[idx + 3];
+      }
+    }
+    
+    return result;
+  }
+
+  isolateColorChannel(imageData: ImageData, channel: 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel' | null): ImageData {
+    if (!channel) {
+      return imageData; // Return original if no channel selected
+    }
+
+    const result = new ImageData(imageData.width, imageData.height);
+
+    if (channel === 'red' || channel === 'green' || channel === 'blue') {
+      // RGB channels
+      const channelIndex = channel === 'red' ? 0 : channel === 'green' ? 1 : 2;
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        result.data[i + channelIndex] = imageData.data[i + channelIndex];
+        result.data[i + (channelIndex === 0 ? 1 : 0)] = 0;
+        result.data[i + (channelIndex === 2 ? 1 : 2)] = 0;
+        result.data[i + 3] = imageData.data[i + 3];
+      }
+    } else if (channel === 'hue' || channel === 'saturation' || channel === 'value') {
+      // HSV channels
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const r = imageData.data[i] / 255;
+        const g = imageData.data[i + 1] / 255;
+        const b = imageData.data[i + 2] / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        
+        let h = 0, s = 0, v = max;
+        
+        if (delta !== 0) {
+          s = delta / max;
+          if (max === r) {
+            h = ((g - b) / delta) % 6;
+          } else if (max === g) {
+            h = (b - r) / delta + 2;
+          } else {
+            h = (r - g) / delta + 4;
+          }
+          h /= 6;
+        }
+        
+        if (channel === 'hue') {
+          // Display hue as RGB
+          const rgb = this.hsvToRgb(h, 1, 1);
+          result.data[i] = rgb.r;
+          result.data[i + 1] = rgb.g;
+          result.data[i + 2] = rgb.b;
+        } else if (channel === 'saturation') {
+          const gray = Math.round(s * 255);
+          result.data[i] = gray;
+          result.data[i + 1] = gray;
+          result.data[i + 2] = gray;
+        } else { // value
+          const gray = Math.round(v * 255);
+          result.data[i] = gray;
+          result.data[i + 1] = gray;
+          result.data[i + 2] = gray;
+        }
+        result.data[i + 3] = imageData.data[i + 3];
+      }
+    } else if (channel === 'lightness' || channel === 'a-channel' || channel === 'b-channel') {
+      // Lab color space channels
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const r = imageData.data[i] / 255;
+        const g = imageData.data[i + 1] / 255;
+        const b = imageData.data[i + 2] / 255;
+        
+        // Convert RGB to Lab (simplified)
+        const lab = this.rgbToLab(r, g, b);
+        
+        if (channel === 'lightness') {
+          const gray = Math.round((lab.l / 100) * 255);
+          result.data[i] = gray;
+          result.data[i + 1] = gray;
+          result.data[i + 2] = gray;
+        } else if (channel === 'a-channel') {
+          // Map a* channel (-128 to 127) to 0-255
+          const gray = Math.round((lab.a + 128) / 255 * 255);
+          result.data[i] = gray;
+          result.data[i + 1] = gray;
+          result.data[i + 2] = gray;
+        } else { // b-channel
+          const gray = Math.round((lab.b + 128) / 255 * 255);
+          result.data[i] = gray;
+          result.data[i + 1] = gray;
+          result.data[i + 2] = gray;
+        }
+        result.data[i + 3] = imageData.data[i + 3];
+      }
+    }
+
+    return result;
+  }
+
+  private hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
+    const c = v * s;
+    const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+    const m = v - c;
+    
+    let r = 0, g = 0, b = 0;
+    
+    if (h < 1/6) {
+      r = c; g = x; b = 0;
+    } else if (h < 2/6) {
+      r = x; g = c; b = 0;
+    } else if (h < 3/6) {
+      r = 0; g = c; b = x;
+    } else if (h < 4/6) {
+      r = 0; g = x; b = c;
+    } else if (h < 5/6) {
+      r = x; g = 0; b = c;
+    } else {
+      r = c; g = 0; b = x;
+    }
+    
+    return {
+      r: Math.round((r + m) * 255),
+      g: Math.round((g + m) * 255),
+      b: Math.round((b + m) * 255)
+    };
+  }
+
+  private rgbToLab(r: number, g: number, b: number): { l: number; a: number; b: number } {
+    // Convert RGB to XYZ
+    let x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    let y = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.00000;
+    let z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+    
+    // Apply gamma correction
+    x = x > 0.008856 ? Math.pow(x, 1/3) : (7.787 * x + 16/116);
+    y = y > 0.008856 ? Math.pow(y, 1/3) : (7.787 * y + 16/116);
+    z = z > 0.008856 ? Math.pow(z, 1/3) : (7.787 * z + 16/116);
+    
+    // Convert to Lab
+    const l = (116 * y) - 16;
+    const a = 500 * (x - y);
+    const bVal = 200 * (y - z);
+    
+    return { l, a, b: bVal };
+  }
+
+  async removeHighlightsAsync(imageData: ImageData, intensity: 'soft' | 'medium' | 'aggressive'): Promise<ImageData> {
+    if (this.workerManager) {
+      try {
+        const worker = await this.workerManager.getHighlightWorker();
+        return new Promise((resolve, reject) => {
+          worker.onmessage = (event) => {
+            if (event.data.type === 'process') {
+              resolve(event.data.result);
+            } else if (event.data.type === 'error') {
+              reject(new Error(event.data.error));
+            }
+          };
+          worker.onerror = reject;
+          worker.postMessage({
+            type: 'process',
+            payload: {
+              imageData,
+              intensity
+            }
+          }, [imageData.data.buffer]);
+        });
+      } catch (error) {
+        console.warn('Worker failed, falling back to synchronous processing:', error);
+      }
+    }
+    // Fallback to synchronous processing
+    return this.removeHighlights(imageData, intensity);
+  }
+
+  removeHighlights(imageData: ImageData, intensity: 'soft' | 'medium' | 'aggressive'): ImageData {
+    // Synchronous fallback - same logic as worker
+    const result = new ImageData(imageData.width, imageData.height);
+    result.data.set(imageData.data);
+
+    const opacityReduction = {
+      soft: 0.3,
+      medium: 0.6,
+      aggressive: 1.0
+    };
+
+    const reduction = opacityReduction[intensity];
+
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const r = imageData.data[i] / 255;
+      const g = imageData.data[i + 1] / 255;
+      const b = imageData.data[i + 2] / 255;
+      const a = imageData.data[i + 3];
+
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+
+      let h = 0;
+      if (delta !== 0) {
+        if (max === r) {
+          h = ((g - b) / delta) % 6;
+        } else if (max === g) {
+          h = (b - r) / delta + 2;
+        } else {
+          h = (r - g) / delta + 4;
+        }
+        h /= 6;
+      }
+
+      const s = max === 0 ? 0 : delta / max;
+      const v = max;
+
+      let isHighlight = false;
+      if (h >= 0.14 && h <= 0.19 && s > 0.3 && v > 0.5) {
+        isHighlight = true; // Yellow
+      } else if ((h >= 0.92 || h <= 0.06) && s > 0.3 && v > 0.5) {
+        isHighlight = true; // Pink
+      } else if (h >= 0.28 && h <= 0.42 && s > 0.3 && v > 0.5) {
+        isHighlight = true; // Green
+      }
+
+      if (isHighlight) {
+        const x = Math.floor((i / 4) % imageData.width);
+        const y = Math.floor((i / 4) / imageData.width);
+        const neighbors = this.getNeighborAverage(imageData, x, y, reduction >= 1.0 ? 3 : 5);
+        
+        if (reduction >= 1.0) {
+          result.data[i] = neighbors.r;
+          result.data[i + 1] = neighbors.g;
+          result.data[i + 2] = neighbors.b;
+        } else {
+          result.data[i] = Math.round(imageData.data[i] * (1 - reduction) + neighbors.r * reduction);
+          result.data[i + 1] = Math.round(imageData.data[i + 1] * (1 - reduction) + neighbors.g * reduction);
+          result.data[i + 2] = Math.round(imageData.data[i + 2] * (1 - reduction) + neighbors.b * reduction);
+        }
+        result.data[i + 3] = a;
+      }
+    }
+
+    return result;
+  }
+
+  // Deprecated: Use SuperResolutionService instead
   applySuperResolution(imageData: ImageData, scaleFactor: number = 2): ImageData {
+    // Fallback implementation using bicubic
     const newWidth = Math.floor(imageData.width * scaleFactor);
     const newHeight = Math.floor(imageData.height * scaleFactor);
     const result = new ImageData(newWidth, newHeight);
@@ -609,7 +926,6 @@ export class ImageProcessingService {
         const srcX = x / scaleFactor;
         const srcY = y / scaleFactor;
         
-        // Use bicubic interpolation for better quality
         const pixel = this.bicubicInterpolate(imageData, srcX, srcY);
         setPixel(result, x, y, pixel.r, pixel.g, pixel.b, pixel.a);
       }
@@ -618,16 +934,12 @@ export class ImageProcessingService {
     return result;
   }
 
-  /**
-   * Bicubic interpolation for super-resolution
-   */
   private bicubicInterpolate(imageData: ImageData, x: number, y: number): { r: number; g: number; b: number; a: number } {
     const x1 = Math.floor(x);
     const y1 = Math.floor(y);
     const fx = x - x1;
     const fy = y - y1;
 
-    // Get 16 surrounding pixels
     let r = 0, g = 0, b = 0, a = 0;
 
     for (let j = -1; j <= 2; j++) {
@@ -655,9 +967,6 @@ export class ImageProcessingService {
     };
   }
 
-  /**
-   * Cubic weight function for bicubic interpolation
-   */
   private cubicWeight(t: number): number {
     const absT = Math.abs(t);
     if (absT <= 1) {

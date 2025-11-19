@@ -1,6 +1,7 @@
 import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnChanges, SimpleChanges, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BoundingBox } from '../../models/bounding-box.interface';
+import { MaskRegion } from '../../models/mask-region.interface';
 
 @Component({
   selector: 'app-canvas-overlay-bounding-boxes',
@@ -44,8 +45,11 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
   @Input() displayHeight = 0;
   @Input() scaleX = 1;
   @Input() scaleY = 1;
+  @Input() maskRegions: MaskRegion[] = [];
+  @Input() isMaskMode = false;
 
   @Output() boxSelected = new EventEmitter<string>();
+  @Output() maskCreated = new EventEmitter<MaskRegion>();
   @Output() boxMoved = new EventEmitter<{ id: string; x: number; y: number }>();
   @Output() boxResized = new EventEmitter<{ id: string; x: number; y: number; width: number; height: number }>();
   @Output() boxDeleted = new EventEmitter<string>();
@@ -74,7 +78,7 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['boundingBoxes'] || changes['selectedBoxId'] || changes['canvasWidth'] || changes['canvasHeight']) {
+    if (changes['boundingBoxes'] || changes['selectedBoxId'] || changes['canvasWidth'] || changes['canvasHeight'] || changes['maskRegions'] || changes['isMaskMode']) {
       this.draw();
     }
   }
@@ -129,6 +133,14 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
         const x = (event.clientX - rect.left) / this.scaleX;
         const y = (event.clientY - rect.top) / this.scaleY;
 
+    // If in mask mode, start creating mask
+    if (this.isMaskMode) {
+      this.isCreating = true;
+      this.createStartX = x;
+      this.createStartY = y;
+      return;
+    }
+
     // Check if clicking on a resize handle
     const handle = this.getResizeHandle(x, y);
     if (handle && this.selectedBoxId) {
@@ -181,15 +193,34 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
       this.draw();
     } else if (this.isCreating) {
       this.draw();
-      // Draw preview box
+      // Draw preview box or mask
       if (this.ctx) {
         const width = x - this.createStartX;
         const height = y - this.createStartY;
-        this.ctx.strokeStyle = '#2196F3';
-        this.ctx.lineWidth = 2;
-        this.ctx.setLineDash([5, 5]);
-        this.ctx.strokeRect(this.createStartX, this.createStartY, width, height);
-        this.ctx.setLineDash([]);
+        if (this.isMaskMode) {
+          // Draw mask preview (black with transparency)
+          this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          this.ctx.fillRect(
+            Math.min(this.createStartX, x),
+            Math.min(this.createStartY, y),
+            Math.abs(width),
+            Math.abs(height)
+          );
+          this.ctx.strokeStyle = '#ff0000';
+          this.ctx.lineWidth = 2;
+          this.ctx.strokeRect(
+            Math.min(this.createStartX, x),
+            Math.min(this.createStartY, y),
+            Math.abs(width),
+            Math.abs(height)
+          );
+        } else {
+          this.ctx.strokeStyle = '#2196F3';
+          this.ctx.lineWidth = 2;
+          this.ctx.setLineDash([5, 5]);
+          this.ctx.strokeRect(this.createStartX, this.createStartY, width, height);
+          this.ctx.setLineDash([]);
+        }
       }
     } else {
       // Update cursor
@@ -213,12 +244,24 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
       const height = y - this.createStartY;
 
       if (Math.abs(width) > 5 && Math.abs(height) > 5) {
-        this.boxCreated.emit({
-          x: Math.min(this.createStartX, x),
-          y: Math.min(this.createStartY, y),
-          width: Math.abs(width),
-          height: Math.abs(height)
-        });
+        if (this.isMaskMode) {
+          // Create mask region
+          const mask: MaskRegion = {
+            id: `mask-${Date.now()}`,
+            x: Math.min(this.createStartX, x),
+            y: Math.min(this.createStartY, y),
+            width: Math.abs(width),
+            height: Math.abs(height)
+          };
+          this.maskCreated.emit(mask);
+        } else {
+          this.boxCreated.emit({
+            x: Math.min(this.createStartX, x),
+            y: Math.min(this.createStartY, y),
+            width: Math.abs(width),
+            height: Math.abs(height)
+          });
+        }
       }
       this.isCreating = false;
       this.draw();
@@ -239,6 +282,15 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
     if (!this.ctx) return;
 
     this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+
+    // Draw mask regions first (behind bounding boxes)
+    this.maskRegions.forEach(mask => {
+      this.ctx!.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      this.ctx!.fillRect(mask.x, mask.y, mask.width, mask.height);
+      this.ctx!.strokeStyle = '#ff0000';
+      this.ctx!.lineWidth = 2;
+      this.ctx!.strokeRect(mask.x, mask.y, mask.width, mask.height);
+    });
 
     this.boundingBoxes.forEach(box => {
       const isSelected = box.id === this.selectedBoxId;

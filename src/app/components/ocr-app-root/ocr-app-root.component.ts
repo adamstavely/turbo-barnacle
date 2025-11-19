@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed, HostListener } from '@angular/core';
+import { Component, OnInit, signal, computed, HostListener, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ToolbarComponent } from '../toolbar/toolbar.component';
 import { ImageLoaderComponent } from '../image-loader/image-loader.component';
@@ -11,6 +11,18 @@ import { ResultsPanelComponent } from '../results-panel/results-panel.component'
 import { TableDetectionComponent } from '../table-detection/table-detection.component';
 import { AutoCleanComponent } from '../auto-clean/auto-clean.component';
 import { AutoCleanService, AutoCleanRecommendations } from '../../services/auto-clean.service';
+import { SplitViewComponent } from '../split-view/split-view.component';
+import { MaskToolComponent } from '../mask-tool/mask-tool.component';
+import { MaskService } from '../../services/mask.service';
+import { MaskRegion } from '../../models/mask-region.interface';
+import { AuditLogService } from '../../services/audit-log.service';
+import { SuperResolutionService } from '../../services/super-resolution.service';
+import { OcrPreviewComponent } from '../ocr-preview/ocr-preview.component';
+import { OcrPreviewService } from '../../services/ocr-preview.service';
+import { ConfidenceHeatmapComponent } from '../confidence-heatmap/confidence-heatmap.component';
+import { SignatureDetectorComponent } from '../signature-detector/signature-detector.component';
+import { SignatureDetectionService } from '../../services/signature-detection.service';
+import { Signature } from '../../models/signature.interface';
 import { OcrOptionsPanelComponent } from '../ocr-options-panel/ocr-options-panel.component';
 import { OcrOptions } from '../../models/ocr-options.interface';
 import { RestApiConfigComponent } from '../rest-api-config/rest-api-config.component';
@@ -49,7 +61,12 @@ import { OcrResult } from '../../models/ocr-result.interface';
     ResultsPanelComponent,
     TableDetectionComponent,
     AutoCleanComponent,
-    OcrOptionsPanelComponent
+    OcrOptionsPanelComponent,
+    SplitViewComponent,
+    MaskToolComponent,
+    OcrPreviewComponent,
+    ConfidenceHeatmapComponent,
+    SignatureDetectorComponent
   ],
   template: `
     <div class="app-container">
@@ -66,7 +83,10 @@ import { OcrResult } from '../../models/ocr-result.interface';
         (compareEngines)="onCompareEngines()"
         (configureRestApi)="onConfigureRestApi()"
         (saveState)="onSaveState()"
-        (loadState)="onLoadState()">
+        (loadState)="onLoadState()"
+        (toggleSplitView)="splitViewEnabled.set(!splitViewEnabled())"
+        (toggleMagnifier)="magnifierEnabled.set(!magnifierEnabled())"
+        (toggleHeatmap)="showHeatmap.set(!showHeatmap())">
       </app-toolbar>
 
       <div class="main-content">
@@ -97,32 +117,68 @@ import { OcrResult } from '../../models/ocr-result.interface';
                 [imageData]="processedImageData()"
                 (recommendationsApplied)="onAutoCleanApplied($event)">
               </app-auto-clean>
+              <app-mask-tool
+                [maskRegions]="() => maskService.getMaskRegions()"
+                (maskRegionAdded)="onMaskRegionAdded($event)"
+                (maskRegionRemoved)="onMaskRegionRemoved($event)"
+                (maskModeToggled)="onMaskModeToggled($event)"
+                (clearMasks)="onClearMasks()">
+              </app-mask-tool>
+              <app-signature-detector
+                [imageData]="processedImageData()"
+                (signatureSelected)="onSignatureSelected($event)"
+                (signatureExported)="onSignatureExported($event)">
+              </app-signature-detector>
             </div>
 
             <div class="center-panel">
-              <div class="canvas-wrapper" style="position: relative;">
-                <app-canvas-container
-                  [imageData]="processedImageData()"
-                  [imageUrl]="state().imageUrl">
-                </app-canvas-container>
-                @if (hasImage()) {
-                  <app-canvas-overlay-bounding-boxes
-                    [boundingBoxes]="state().boundingBoxes"
-                    [selectedBoxId]="state().selectedBoxId"
-                    [canvasWidth]="state().width"
-                    [canvasHeight]="state().height"
-                    [displayWidth]="800"
-                    [displayHeight]="600"
-                    [scaleX]="1"
-                    [scaleY]="1"
-                    (boxSelected)="onBoxSelected($event)"
-                    (boxMoved)="onBoxMoved($event)"
-                    (boxResized)="onBoxResized($event)"
-                    (boxDeleted)="onBoxDeleted($event)"
-                    (boxCreated)="onBoxCreated($event)">
-                  </app-canvas-overlay-bounding-boxes>
-                }
-              </div>
+              @if (splitViewEnabled()) {
+                <app-split-view
+                  [originalImageData]="state().originalImageData"
+                  [originalImageUrl]="state().imageUrl"
+                  [enhancedImageData]="processedImageData()"
+                  [enhancedImageUrl]="state().imageUrl"
+                  (splitViewToggled)="onSplitViewToggled($event)">
+                </app-split-view>
+              } @else {
+                <div class="canvas-wrapper" style="position: relative;">
+                  <app-canvas-container
+                    [imageData]="processedImageData()"
+                    [imageUrl]="state().imageUrl"
+                    [magnifierEnabled]="magnifierEnabled()">
+                  </app-canvas-container>
+                  @if (hasImage()) {
+                    <app-canvas-overlay-bounding-boxes
+                      [boundingBoxes]="state().boundingBoxes"
+                      [selectedBoxId]="state().selectedBoxId"
+                      [canvasWidth]="state().width"
+                      [canvasHeight]="state().height"
+                      [displayWidth]="800"
+                      [displayHeight]="600"
+                      [scaleX]="1"
+                      [scaleY]="1"
+                      [maskRegions]="maskService.getMaskRegions()"
+                      [isMaskMode]="isMaskMode()"
+                      (boxSelected)="onBoxSelected($event)"
+                      (boxMoved)="onBoxMoved($event)"
+                      (boxResized)="onBoxResized($event)"
+                      (boxDeleted)="onBoxDeleted($event)"
+                      (boxCreated)="onBoxCreated($event)"
+                      (maskCreated)="onMaskCreated($event)">
+                    </app-canvas-overlay-bounding-boxes>
+                    <app-confidence-heatmap
+                      [boundingBoxes]="state().boundingBoxes"
+                      [canvasWidth]="state().width"
+                      [canvasHeight]="state().height"
+                      [displayWidth]="800"
+                      [displayHeight]="600"
+                      [scaleX]="1"
+                      [scaleY]="1"
+                      [enabled]="showHeatmap()">
+                    </app-confidence-heatmap>
+                  }
+                </div>
+              }
             </div>
 
             <div class="right-panel">
@@ -134,6 +190,15 @@ import { OcrResult } from '../../models/ocr-result.interface';
                 (boxHover)="onBoxHover($event)">
               </app-results-panel>
             </div>
+
+            <app-ocr-preview
+              #ocrPreview
+              [imageData]="processedImageData()"
+              [regionX]="previewRegion().x"
+              [regionY]="previewRegion().y"
+              [regionWidth]="previewRegion().width"
+              [regionHeight]="previewRegion().height">
+            </app-ocr-preview>
           </div>
         }
       </div>
@@ -199,7 +264,15 @@ export class OcrAppRootComponent implements OnInit {
   isProcessing = signal(false);
   hoveredBoxId = signal<string | null>(null);
   processedImageData = signal<ImageData | null>(null);
+  splitViewEnabled = signal(false);
+  magnifierEnabled = signal(false);
+  isMaskMode = signal(false);
+  showHeatmap = signal(false);
   currentOcrOptions = signal<OcrOptions | undefined>(undefined);
+  previewRegion = signal({ x: 0, y: 0, width: 0, height: 0 });
+  detectedSignatures = signal<Signature[]>([]);
+
+  @ViewChild('ocrPreview') ocrPreviewComponent!: OcrPreviewComponent;
 
   state = computed(() => this.stateStore.getState()());
   
@@ -223,8 +296,16 @@ export class OcrAppRootComponent implements OnInit {
     private autoClean: AutoCleanService,
     private statePersistence: StatePersistenceService,
     private pdfRasterizer: PdfRasterizerService,
-    private dialog: MatDialog
-  ) {}
+    private dialog: MatDialog,
+    public maskService: MaskService,
+    private auditLog: AuditLogService,
+    private superResolution: SuperResolutionService,
+    private ocrPreview: OcrPreviewService,
+    private signatureDetection: SignatureDetectionService
+  ) {
+    // Initialize audit logging
+    this.auditLog.initialize().catch(err => console.error('Failed to initialize audit log:', err));
+  }
 
   ngOnInit(): void {
     // Initialize default OCR engine
@@ -284,6 +365,27 @@ export class OcrAppRootComponent implements OnInit {
       if (this.hasImage()) {
         this.onClear();
       }
+      return;
+    }
+
+    // S: Toggle split view
+    if (event.key === 's' && !event.ctrlKey && !event.metaKey && !event.shiftKey && this.hasImage()) {
+      event.preventDefault();
+      this.splitViewEnabled.set(!this.splitViewEnabled());
+      return;
+    }
+
+    // M: Toggle magnifier
+    if (event.key === 'm' && !event.ctrlKey && !event.metaKey && !event.shiftKey && this.hasImage()) {
+      event.preventDefault();
+      this.magnifierEnabled.set(!this.magnifierEnabled());
+      return;
+    }
+
+    // H: Toggle heatmap
+    if (event.key === 'h' && !event.ctrlKey && !event.metaKey && !event.shiftKey && this.hasImage()) {
+      event.preventDefault();
+      this.showHeatmap.set(!this.showHeatmap());
       return;
     }
   }
@@ -384,6 +486,24 @@ export class OcrAppRootComponent implements OnInit {
     const currentState = this.state();
     if (!currentState.currentImageData) return;
 
+    // Log preprocessing steps
+    const steps: string[] = [];
+    if (transform.brightness !== undefined) steps.push('brightness');
+    if (transform.contrast !== undefined) steps.push('contrast');
+    if (transform.sharpen !== undefined) steps.push('sharpen');
+    if (transform.denoise !== undefined) steps.push('denoise');
+    if (transform.binarization) steps.push('binarization');
+    if (transform.clahe) steps.push('clahe');
+    if (transform.removeShadows) steps.push('removeShadows');
+    if (transform.removeGlare) steps.push('removeGlare');
+    if (transform.moireIntensity !== undefined) steps.push('moireRemoval');
+    if (transform.colorChannel !== undefined) steps.push('colorChannel');
+    if (transform.highlightRemoval !== undefined) steps.push('highlightRemoval');
+    
+    if (steps.length > 0) {
+      this.auditLog.logPreprocessing(steps).catch(err => console.error('Failed to log preprocessing:', err));
+    }
+
     let processed = currentState.currentImageData;
 
     if (transform.reset) {
@@ -438,12 +558,55 @@ export class OcrAppRootComponent implements OnInit {
             processed = this.imageProcessing.autoLightingCorrection(processed);
           }
           if (transform.superResolution !== undefined && transform.superResolution > 1) {
-            processed = this.imageProcessing.applySuperResolution(processed, transform.superResolution);
-            // Update dimensions after super-resolution
-            this.stateStore.updateState({
-              width: processed.width,
-              height: processed.height
+            const method = transform.superResolutionMethod || 'bicubic';
+            // Use async super-resolution service
+            this.superResolution.upscale(processed, transform.superResolution, method).then(result => {
+              this.processedImageData.set(result);
+              this.stateStore.updateImageData(result);
+              this.stateStore.updateState({
+                width: result.width,
+                height: result.height
+              });
+            }).catch(() => {
+              // Fallback to synchronous
+              const result = this.imageProcessing.applySuperResolution(processed, transform.superResolution);
+              this.processedImageData.set(result);
+              this.stateStore.updateImageData(result);
+              this.stateStore.updateState({
+                width: result.width,
+                height: result.height
+              });
             });
+            return; // Don't update synchronously for async operation
+          }
+          if (transform.moireIntensity !== undefined && transform.moireIntensity > 0) {
+            // Use async moiré removal for better performance
+            this.imageProcessing.removeMoireAsync(processed, transform.moireIntensity).then(result => {
+              this.processedImageData.set(result);
+              this.stateStore.updateImageData(result);
+            }).catch(() => {
+              // Fallback to synchronous
+              const result = this.imageProcessing.removeMoire(processed, transform.moireIntensity);
+              this.processedImageData.set(result);
+              this.stateStore.updateImageData(result);
+            });
+            return; // Don't update synchronously for async operation
+          }
+          if (transform.colorChannel !== undefined) {
+            processed = this.imageProcessing.isolateColorChannel(processed, transform.colorChannel);
+          }
+          if (transform.highlightRemoval !== undefined && transform.highlightRemoval !== null) {
+            // Use async highlight removal for better performance
+            this.imageProcessing.removeHighlightsAsync(processed, transform.highlightRemoval).then(result => {
+              this.processedImageData.set(result);
+              this.stateStore.updateImageData(result);
+            }).catch(() => {
+              // Fallback to synchronous
+              const result = this.imageProcessing.removeHighlights(processed, transform.highlightRemoval);
+              this.processedImageData.set(result);
+              this.stateStore.updateImageData(result);
+            });
+            return; // Don't update synchronously for async operation
           }
         }
 
@@ -707,7 +870,14 @@ export class OcrAppRootComponent implements OnInit {
     this.isProcessing.set(true);
 
     try {
-      const blob = await imageDataToBlob(currentState.currentImageData);
+      // Apply masks before OCR
+      let imageData = currentState.currentImageData;
+      const maskRegions = this.maskService.getMaskRegions();
+      if (maskRegions.length > 0) {
+        imageData = this.maskService.applyMaskToImageData(imageData, maskRegions);
+      }
+
+      const blob = await imageDataToBlob(imageData);
       const options = this.currentOcrOptions();
       const result = await this.ocrEngine.performOCR(blob, options);
       
@@ -722,10 +892,12 @@ export class OcrAppRootComponent implements OnInit {
 
   onBoxSelected(boxId: string): void {
     this.stateStore.setSelectedBox(boxId);
+    this.updateOcrPreview(boxId);
   }
 
   onBoxMoved(event: { id: string; x: number; y: number }): void {
     this.stateStore.updateBoundingBox(event.id, { x: event.x, y: event.y });
+    this.updateOcrPreview(event.id);
   }
 
   onBoxResized(event: { id: string; x: number; y: number; width: number; height: number }): void {
@@ -735,10 +907,12 @@ export class OcrAppRootComponent implements OnInit {
       width: event.width,
       height: event.height
     });
+    this.updateOcrPreview(event.id);
   }
 
   onBoxUpdated(box: BoundingBox): void {
     this.stateStore.updateBoundingBox(box.id, box);
+    this.auditLog.logBoundingBoxEdit(box.id, 'updated').catch(err => console.error('Failed to log box edit:', err));
   }
 
   onBoxDeleted(boxId: string): void {
@@ -858,7 +1032,69 @@ export class OcrAppRootComponent implements OnInit {
       this.stateStore.clearState();
       this.processedImageData.set(null);
       this.undoRedo.clear();
+      this.splitViewEnabled.set(false);
     }
+  }
+
+  onSplitViewToggled(enabled: boolean): void {
+    this.splitViewEnabled.set(enabled);
+  }
+
+  onMaskRegionAdded(region: MaskRegion): void {
+    this.maskService.addMaskRegion(region);
+  }
+
+  onMaskRegionRemoved(id: string): void {
+    this.maskService.removeMaskRegion(id);
+  }
+
+  onMaskModeToggled(enabled: boolean): void {
+    this.isMaskMode.set(enabled);
+  }
+
+  onClearMasks(): void {
+    this.maskService.clearMaskRegions();
+  }
+
+  onMaskCreated(mask: MaskRegion): void {
+    this.maskService.addMaskRegion(mask);
+    this.auditLog.logMaskOperation(this.maskService.getMaskRegions().length).catch(err => console.error('Failed to log mask:', err));
+  }
+
+  private async updateOcrPreview(boxId: string): Promise<void> {
+    const box = this.state().boundingBoxes.find(b => b.id === boxId);
+    if (!box || !this.processedImageData()) return;
+
+    this.previewRegion.set({
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height
+    });
+
+    // Update preview component
+    if (this.ocrPreviewComponent) {
+      this.ocrPreviewComponent.regionX = box.x;
+      this.ocrPreviewComponent.regionY = box.y;
+      this.ocrPreviewComponent.regionWidth = box.width;
+      this.ocrPreviewComponent.regionHeight = box.height;
+      await this.ocrPreviewComponent.updatePreview();
+    }
+  }
+
+  onSignatureSelected(signature: Signature): void {
+    // Select the signature's bounding box
+    this.stateStore.setSelectedBox(signature.boundingBox.id);
+    // Add signature bounding box to state if not already present
+    const existingBox = this.state().boundingBoxes.find(b => b.id === signature.boundingBox.id);
+    if (!existingBox) {
+      this.stateStore.addBoundingBox(signature.boundingBox);
+    }
+  }
+
+  onSignatureExported(event: { signature: Signature; blob: Blob }): void {
+    // Log export action
+    this.auditLog.logExport('signature', 'png').catch(err => console.error('Failed to log export:', err));
   }
 }
 

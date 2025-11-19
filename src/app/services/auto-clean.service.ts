@@ -18,6 +18,7 @@ export interface AutoCleanRecommendations {
   clahe?: boolean;
   confidence: number;
   reasoning: string[];
+  transformations?: Array<{ name: string; params?: any; timestamp: number }>;
 }
 
 @Injectable({
@@ -31,7 +32,8 @@ export class AutoCleanService {
   analyzeAndRecommend(imageData: ImageData): AutoCleanRecommendations {
     const recommendations: AutoCleanRecommendations = {
       confidence: 0,
-      reasoning: []
+      reasoning: [],
+      transformations: []
     };
 
     // Analyze image characteristics
@@ -41,50 +43,59 @@ export class AutoCleanService {
     if (stats.averageBrightness < 100) {
       recommendations.brightness = Math.min(0.3, (100 - stats.averageBrightness) / 255);
       recommendations.reasoning.push(`Image is dark (avg brightness: ${stats.averageBrightness.toFixed(0)}). Suggest brightness increase.`);
+      recommendations.transformations!.push({ name: 'brightness', params: { value: recommendations.brightness }, timestamp: Date.now() });
     } else if (stats.averageBrightness > 200) {
       recommendations.brightness = -0.1;
       recommendations.reasoning.push(`Image is bright (avg brightness: ${stats.averageBrightness.toFixed(0)}). Suggest slight brightness decrease.`);
+      recommendations.transformations!.push({ name: 'brightness', params: { value: recommendations.brightness }, timestamp: Date.now() });
     }
 
     // Contrast analysis
     if (stats.contrast < 30) {
       recommendations.contrast = 0.2;
       recommendations.reasoning.push(`Low contrast detected (${stats.contrast.toFixed(0)}). Suggest contrast increase.`);
+      recommendations.transformations!.push({ name: 'contrast', params: { value: recommendations.contrast }, timestamp: Date.now() });
     }
 
     // Noise analysis
     if (stats.noiseLevel > 15) {
       recommendations.denoise = Math.min(3, stats.noiseLevel / 10);
       recommendations.reasoning.push(`High noise detected (${stats.noiseLevel.toFixed(1)}). Suggest denoising.`);
+      recommendations.transformations!.push({ name: 'denoise', params: { value: recommendations.denoise }, timestamp: Date.now() });
     }
 
     // Blur analysis
     if (stats.sharpness < 50) {
       recommendations.sharpen = 0.3;
       recommendations.reasoning.push(`Image appears blurry (sharpness: ${stats.sharpness.toFixed(0)}). Suggest sharpening.`);
+      recommendations.transformations!.push({ name: 'sharpen', params: { value: recommendations.sharpen }, timestamp: Date.now() });
     }
 
     // Skew analysis
     if (stats.skewAngle > 1 || stats.skewAngle < -1) {
       recommendations.autoDeskew = true;
       recommendations.reasoning.push(`Image appears skewed (${stats.skewAngle.toFixed(1)}°). Suggest auto-deskew.`);
+      recommendations.transformations!.push({ name: 'autoDeskew', timestamp: Date.now() });
     }
 
     // Shadow/glare detection
     if (stats.shadowRatio > 0.2) {
       recommendations.removeShadows = true;
       recommendations.reasoning.push(`Shadows detected (${(stats.shadowRatio * 100).toFixed(0)}%). Suggest shadow removal.`);
+      recommendations.transformations!.push({ name: 'removeShadows', timestamp: Date.now() });
     }
 
     if (stats.glareRatio > 0.1) {
       recommendations.removeGlare = true;
       recommendations.reasoning.push(`Glare detected (${(stats.glareRatio * 100).toFixed(0)}%). Suggest glare removal.`);
+      recommendations.transformations!.push({ name: 'removeGlare', timestamp: Date.now() });
     }
 
     // Background analysis
     if (stats.backgroundBrightness < 200) {
       recommendations.whitenBackground = true;
       recommendations.reasoning.push(`Background is not white (brightness: ${stats.backgroundBrightness.toFixed(0)}). Suggest background whitening.`);
+      recommendations.transformations!.push({ name: 'whitenBackground', timestamp: Date.now() });
     }
 
     // Text clarity analysis
@@ -92,7 +103,12 @@ export class AutoCleanService {
       recommendations.binarization = true;
       recommendations.binarizationMethod = 'otsu';
       recommendations.reasoning.push(`Text clarity is low (${(stats.textClarity * 100).toFixed(0)}%). Suggest binarization.`);
+      recommendations.transformations!.push({ name: 'binarization', params: { method: recommendations.binarizationMethod }, timestamp: Date.now() });
     }
+
+    // Always suggest CLAHE for better contrast
+    recommendations.clahe = true;
+    recommendations.transformations!.push({ name: 'clahe', timestamp: Date.now() });
 
     // Calculate confidence based on number of recommendations
     const recommendationCount = Object.keys(recommendations).filter(

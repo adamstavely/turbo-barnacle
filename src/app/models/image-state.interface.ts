@@ -21,6 +21,9 @@ export interface ImageTransform {
     barrel?: number;
     pincushion?: number;
   };
+  colorChannel?: 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel' | null;
+  moireIntensity?: number;
+  highlightRemoval?: 'soft' | 'medium' | 'aggressive' | null;
 }
 
 export interface ImageState {
@@ -35,5 +38,6 @@ export interface ImageState {
   ocrResults: OcrResult[];
   boundingBoxes: BoundingBox[];
   selectedBoxId: string | null;
+  splitViewEnabled?: boolean;
 }
 

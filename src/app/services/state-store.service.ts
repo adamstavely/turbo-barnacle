@@ -18,7 +18,8 @@ export class StateStoreService {
     transforms: {},
     ocrResults: [],
     boundingBoxes: [],
-    selectedBoxId: null
+    selectedBoxId: null,
+    splitViewEnabled: false
   };
 
   private state = signal<ImageState>(this.initialState);

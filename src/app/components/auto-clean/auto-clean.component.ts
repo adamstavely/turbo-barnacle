@@ -6,6 +6,8 @@ import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatExpansionModule } from '@angular/material/expansion';
+import { MatDialog } from '@angular/material/dialog';
+import { MatDialogModule } from '@angular/material/dialog';
 import { AutoCleanService, AutoCleanRecommendations } from '../../services/auto-clean.service';
 
 @Component({
@@ -18,7 +20,8 @@ import { AutoCleanService, AutoCleanRecommendations } from '../../services/auto-
     MatCardModule,
     MatChipsModule,
     MatProgressSpinnerModule,
-    MatExpansionModule
+    MatExpansionModule,
+    MatDialogModule
   ],
   template: `
     <div class="auto-clean-panel">
@@ -69,9 +72,28 @@ import { AutoCleanService, AutoCleanRecommendations } from '../../services/auto-
                 </button>
                 <button mat-stroked-button (click)="previewRecommendations()">
                   <mat-icon>preview</mat-icon>
-                  Preview
+                  Preview Before/After
                 </button>
               </div>
+
+              @if (recommendations()!.transformations && recommendations()!.transformations!.length > 0) {
+                <mat-expansion-panel>
+                  <mat-expansion-panel-header>
+                    <mat-panel-title>Transformation Log</mat-panel-title>
+                  </mat-expansion-panel-header>
+                  <div class="transform-log">
+                    @for (transform of recommendations()!.transformations; track transform.timestamp) {
+                      <div class="transform-item">
+                        <span class="transform-name">{{ transform.name }}</span>
+                        @if (transform.params) {
+                          <span class="transform-params">{{ transform.params | json }}</span>
+                        }
+                        <span class="transform-time">{{ transform.timestamp | date:'HH:mm:ss' }}</span>
+                      </div>
+                    }
+                  </div>
+                </mat-expansion-panel>
+              }
 
               <mat-expansion-panel>
                 <mat-expansion-panel-header>
@@ -176,6 +198,35 @@ import { AutoCleanService, AutoCleanRecommendations } from '../../services/auto-
       padding: 8px;
     }
 
+    .transform-log {
+      padding: 8px;
+    }
+
+    .transform-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 12px;
+    }
+
+    .transform-name {
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .transform-params {
+      color: #666;
+      font-size: 11px;
+      margin: 0 8px;
+    }
+
+    .transform-time {
+      color: #999;
+      font-size: 11px;
+    }
+
     mat-spinner {
       margin-right: 8px;
     }
@@ -187,8 +238,9 @@ export class AutoCleanComponent {
 
   recommendations = signal<AutoCleanRecommendations | null>(null);
   isAnalyzing = signal(false);
+  beforeImageData: ImageData | null = null;
 
-  constructor(private autoClean: AutoCleanService) {}
+  constructor(private autoClean: AutoCleanService, private dialog: MatDialog) {}
 
   hasImage(): boolean {
     return this.imageData !== null;
@@ -221,9 +273,15 @@ export class AutoCleanComponent {
   }
 
   previewRecommendations(): void {
-    // Preview would show before/after comparison
-    // For now, just apply
-    this.applyRecommendations();
+    if (!this.imageData || !this.recommendations()) return;
+    
+    // Store before image
+    this.beforeImageData = this.imageData;
+    
+    // Emit preview event - parent component will handle showing before/after
+    // For now, we'll just show a simple alert with transformation count
+    const transformCount = this.recommendations()!.transformations?.length || 0;
+    alert(`Preview: ${transformCount} transformations will be applied. Click "Apply All Recommendations" to apply them.`);
   }
 }
 

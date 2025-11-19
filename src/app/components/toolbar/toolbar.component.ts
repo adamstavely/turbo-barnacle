@@ -58,6 +58,15 @@ import { EngineSelectorComponent } from '../engine-selector/engine-selector.comp
       <button mat-icon-button (click)="onLoadState()" matTooltip="Load State">
         <mat-icon>folder_open</mat-icon>
       </button>
+      <button mat-icon-button (click)="toggleSplitView.emit()" [disabled]="!canRunOcr" matTooltip="Toggle Split View (S)">
+        <mat-icon>compare_arrows</mat-icon>
+      </button>
+      <button mat-icon-button (click)="toggleMagnifier.emit()" [disabled]="!canRunOcr" matTooltip="Toggle Magnifier (M)">
+        <mat-icon>zoom_in</mat-icon>
+      </button>
+      <button mat-icon-button (click)="toggleHeatmap.emit()" [disabled]="!canRunOcr" matTooltip="Toggle Confidence Heatmap (H)">
+        <mat-icon>gradient</mat-icon>
+      </button>
     </mat-toolbar>
   `,
   styles: [`
@@ -100,6 +109,9 @@ export class ToolbarComponent {
   @Output() configureRestApi = new EventEmitter<void>();
   @Output() saveState = new EventEmitter<void>();
   @Output() loadState = new EventEmitter<void>();
+  @Output() toggleSplitView = new EventEmitter<void>();
+  @Output() toggleMagnifier = new EventEmitter<void>();
+  @Output() toggleHeatmap = new EventEmitter<void>();
 
   onRunOcr(): void {
     this.runOcr.emit();

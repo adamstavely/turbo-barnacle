@@ -4,6 +4,7 @@ import { OcrResult } from '../models/ocr-result.interface';
 import { OcrOptions } from '../models/ocr-options.interface';
 import { MockOcrAdapter } from '../adapters/ocr.adapter.mock';
 import { TesseractOcrAdapter } from '../adapters/ocr.adapter.tesseract';
+import { AuditLogService } from './audit-log.service';
 
 @Injectable({
   providedIn: 'root'
@@ -13,7 +14,7 @@ export class OcrEngineService {
   private currentAdapter = signal<OcrEngineAdapter | null>(null);
   private currentAdapterName = signal<string>('');
 
-  constructor() {
+  constructor(private auditLog?: AuditLogService) {
     // Register built-in adapters
     this.registerAdapter(new MockOcrAdapter());
     this.registerAdapter(new TesseractOcrAdapter());
@@ -56,7 +57,21 @@ export class OcrEngineService {
       throw new Error('No OCR adapter selected');
     }
 
-    return await adapter.performOCR(imageBlob, options);
+    const startTime = Date.now();
+    const result = await adapter.performOCR(imageBlob, options);
+    const processingTime = Date.now() - startTime;
+
+    // Log OCR operation
+    if (this.auditLog) {
+      await this.auditLog.logOcrOperation(adapter.name, {
+        ...options,
+        processingTime,
+        boundingBoxCount: result.boundingBoxes.length,
+        confidence: result.confidence
+      });
+    }
+
+    return result;
   }
 
   async registerRestAdapter(config: { name: string; endpoint: string; apiKey?: string; headers?: Record<string, string> }): Promise<void> {

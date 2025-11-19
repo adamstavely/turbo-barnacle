@@ -88,6 +88,28 @@ import { MatSelectModule } from '@angular/material/select';
           <mat-icon>auto_fix_high</mat-icon>
           Auto Lighting
         </button>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Color Channel</mat-label>
+          <mat-select [(ngModel)]="colorChannel" (ngModelChange)="onColorChannelChange($event)">
+            <mat-option value="null">Full Color</mat-option>
+            <mat-optgroup label="RGB">
+              <mat-option value="red">Red</mat-option>
+              <mat-option value="green">Green</mat-option>
+              <mat-option value="blue">Blue</mat-option>
+            </mat-optgroup>
+            <mat-optgroup label="HSV">
+              <mat-option value="hue">Hue</mat-option>
+              <mat-option value="saturation">Saturation</mat-option>
+              <mat-option value="value">Value</mat-option>
+            </mat-optgroup>
+            <mat-optgroup label="Lab">
+              <mat-option value="lightness">Lightness</mat-option>
+              <mat-option value="a-channel">A-Channel</mat-option>
+              <mat-option value="b-channel">B-Channel</mat-option>
+            </mat-optgroup>
+          </mat-select>
+        </mat-form-field>
       </mat-expansion-panel>
 
       <mat-expansion-panel>
@@ -143,6 +165,19 @@ import { MatSelectModule } from '@angular/material/select';
             (ngModelChange)="onEdgeEnhancementChange($event)">
           </mat-slider>
         </div>
+
+        <div class="slider-control">
+          <label>Moiré Removal: {{ moireIntensity | number:'1.0-0' }}%</label>
+          <mat-slider
+            [min]="0"
+            [max]="100"
+            [step]="1"
+            [discrete]="true"
+            [showTickMarks]="true"
+            [(ngModel)]="moireIntensity"
+            (ngModelChange)="onMoireIntensityChange($event)">
+          </mat-slider>
+        </div>
       </mat-expansion-panel>
 
           <mat-expansion-panel>
@@ -151,6 +186,15 @@ import { MatSelectModule } from '@angular/material/select';
             </mat-expansion-panel-header>
 
             <p class="info-text">Upscale image for better OCR accuracy</p>
+            
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Method</mat-label>
+              <mat-select [(ngModel)]="superResolutionMethod" (ngModelChange)="onSuperResolutionMethodChange($event)">
+                <mat-option value="bicubic">Bicubic (Fast)</mat-option>
+                <mat-option value="esrgan">ESRGAN (Quality)</mat-option>
+              </mat-select>
+            </mat-form-field>
+
             <div class="slider-control">
               <label>Scale Factor: {{ superResolutionScale | number:'1.0-1' }}x</label>
               <mat-slider
@@ -192,6 +236,16 @@ import { MatSelectModule } from '@angular/material/select';
           <mat-icon>format_color_fill</mat-icon>
           Whiten Background
         </button>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Highlight Removal</mat-label>
+          <mat-select [(ngModel)]="highlightRemoval" (ngModelChange)="onHighlightRemovalChange($event)">
+            <mat-option value="null">None</mat-option>
+            <mat-option value="soft">Soft Clean</mat-option>
+            <mat-option value="medium">Medium Clean</mat-option>
+            <mat-option value="aggressive">Aggressive Clean</mat-option>
+          </mat-select>
+        </mat-form-field>
 
         <div class="slider-control">
           <label>Bilateral Denoise: {{ bilateralDenoise | number:'1.0-2' }}</label>
@@ -240,6 +294,11 @@ import { MatSelectModule } from '@angular/material/select';
       margin-top: 16px;
     }
 
+    .full-width {
+      width: 100%;
+      margin-top: 16px;
+    }
+
     .reset-button {
       width: 100%;
       margin-top: 16px;
@@ -268,6 +327,10 @@ export class EnhancementToolsPanelComponent {
         bilateralDenoise?: number;
         autoLighting?: boolean;
         superResolution?: number;
+        superResolutionMethod?: 'bicubic' | 'esrgan';
+        moireIntensity?: number;
+        colorChannel?: 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel' | null;
+        highlightRemoval?: 'soft' | 'medium' | 'aggressive' | null;
         reset?: boolean;
       }>();
 
@@ -282,6 +345,10 @@ export class EnhancementToolsPanelComponent {
       edgeEnhancement = 0;
       bilateralDenoise = 0;
       superResolutionScale = 2;
+      superResolutionMethod: 'bicubic' | 'esrgan' = 'bicubic';
+      moireIntensity = 0;
+      colorChannel: 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel' | null = null;
+      highlightRemoval: 'soft' | 'medium' | 'aggressive' | null = null;
 
   onBrightnessChange(value: number): void {
     this.transformChange.emit({ brightness: value });
@@ -347,8 +414,27 @@ export class EnhancementToolsPanelComponent {
         this.superResolutionScale = value;
       }
 
+      onSuperResolutionMethodChange(value: 'bicubic' | 'esrgan'): void {
+        this.superResolutionMethod = value;
+      }
+
       onApplySuperResolution(): void {
-        this.transformChange.emit({ superResolution: this.superResolutionScale });
+        this.transformChange.emit({ 
+          superResolution: this.superResolutionScale,
+          superResolutionMethod: this.superResolutionMethod
+        });
+      }
+
+      onMoireIntensityChange(value: number): void {
+        this.transformChange.emit({ moireIntensity: value });
+      }
+
+      onColorChannelChange(value: 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel' | null): void {
+        this.transformChange.emit({ colorChannel: value === 'null' ? null : value });
+      }
+
+      onHighlightRemovalChange(value: 'soft' | 'medium' | 'aggressive' | null): void {
+        this.transformChange.emit({ highlightRemoval: value === 'null' ? null : value });
       }
 
       onReset(): void {
@@ -363,6 +449,10 @@ export class EnhancementToolsPanelComponent {
         this.edgeEnhancement = 0;
         this.bilateralDenoise = 0;
         this.superResolutionScale = 2;
+        this.superResolutionMethod = 'bicubic';
+        this.moireIntensity = 0;
+        this.colorChannel = null;
+        this.highlightRemoval = null;
         this.transformChange.emit({ reset: true });
   }
 }

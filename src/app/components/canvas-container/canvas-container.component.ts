@@ -1,19 +1,27 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CanvasImageComponent } from '../canvas-image/canvas-image.component';
+import { MagnifierLensComponent } from '../magnifier-lens/magnifier-lens.component';
 
 @Component({
   selector: 'app-canvas-container',
   standalone: true,
-  imports: [CommonModule, CanvasImageComponent],
+  imports: [CommonModule, CanvasImageComponent, MagnifierLensComponent],
   template: `
     <div class="canvas-container">
       <app-canvas-image
+        #canvasImage
         [imageData]="imageData"
         [imageUrl]="imageUrl"
         [maxDisplayWidth]="800"
         [maxDisplayHeight]="600">
       </app-canvas-image>
+      @if (magnifierEnabled) {
+        <app-magnifier-lens
+          [sourceCanvas]="getSourceCanvas()"
+          [lensSize]="200">
+        </app-magnifier-lens>
+      }
     </div>
   `,
   styles: [`
@@ -31,5 +39,12 @@ import { CanvasImageComponent } from '../canvas-image/canvas-image.component';
 export class CanvasContainerComponent {
   @Input() imageData: ImageData | null = null;
   @Input() imageUrl: string | null = null;
+  @Input() magnifierEnabled = false;
+  
+  @ViewChild('canvasImage') canvasImageComponent!: CanvasImageComponent;
+
+  getSourceCanvas(): HTMLCanvasElement | null {
+    return this.canvasImageComponent?.getCanvas() || null;
+  }
 }
 
