@@ -26,8 +26,8 @@ export class PolygonWarpService {
     const result = new ImageData(imageData.width, imageData.height);
     result.data.set(imageData.data);
 
-    // Calculate TPS transformation matrix
-    const tpsMatrix = this.calculateTPSMatrix(sourcePoints, targetPoints);
+    // Calculate TPS transformation coefficients
+    const tpsCoeffs = this.calculateTPSMatrix(sourcePoints, targetPoints);
 
     // Create bounding box for the polygon region
     const bounds = this.getPolygonBounds(sourcePoints);
@@ -38,7 +38,7 @@ export class PolygonWarpService {
         // Check if point is inside the polygon
         if (this.isPointInPolygon({ x, y }, sourcePoints)) {
           // Transform point using TPS
-          const transformed = this.applyTPSTransform({ x, y }, sourcePoints, tpsMatrix);
+          const transformed = this.applyTPSTransform({ x, y }, sourcePoints, tpsCoeffs);
           
           // Sample from original image using bilinear interpolation
           const pixel = interpolateBilinear(imageData, transformed.x, transformed.y);
@@ -51,9 +51,9 @@ export class PolygonWarpService {
   }
 
   /**
-   * Calculate Thin Plate Spline transformation matrix
+   * Calculate Thin Plate Spline transformation coefficients
    */
-  private calculateTPSMatrix(sourcePoints: Point[], targetPoints: Point[]): number[][] {
+  private calculateTPSMatrix(sourcePoints: Point[], targetPoints: Point[]): { weights: number[][], affine: number[][] } {
     const n = sourcePoints.length;
     const K: number[][] = [];
     const P: number[][] = [];
@@ -84,53 +84,163 @@ export class PolygonWarpService {
       Y[i] = [targetPoints[i].x, targetPoints[i].y];
     }
 
-    // Solve for transformation coefficients
-    // Simplified: In production, use proper matrix solver (SVD, etc.)
+    // Solve for transformation coefficients using proper TPS solver
     return this.solveTPS(K, P, Y);
   }
 
-  private solveTPS(K: number[][], P: number[][], Y: number[][]): number[][] {
-    // Simplified TPS solver - in production use proper numerical methods
-    // This is a placeholder that returns identity-like transformation
+  private solveTPS(K: number[][], P: number[][], Y: number[][]): { weights: number[][], affine: number[][] } {
+    // Proper TPS solver using full system matrix
+    // TPS system: L * [w, a] = [Y, 0]
+    // Where L = [[K, P], [P^T, 0]]
     const n = K.length;
-    const result: number[][] = [];
     
+    // Build full system matrix L (n+3 x n+3)
+    const L: number[][] = [];
+    
+    // Top-left: K matrix (n x n)
     for (let i = 0; i < n; i++) {
-      result[i] = [Y[i][0], Y[i][1]];
+      L[i] = [];
+      for (let j = 0; j < n; j++) {
+        L[i][j] = K[i][j];
+      }
+      // Top-right: P matrix (n x 3)
+      for (let j = 0; j < 3; j++) {
+        L[i][n + j] = P[i][j];
+      }
     }
     
-    return result;
+    // Bottom-left: P^T matrix (3 x n)
+    for (let i = 0; i < 3; i++) {
+      L[n + i] = [];
+      for (let j = 0; j < n; j++) {
+        L[n + i][j] = P[j][i];
+      }
+      // Bottom-right: zeros (3 x 3)
+      for (let j = 0; j < 3; j++) {
+        L[n + i][n + j] = 0;
+      }
+    }
+    
+    // Build target vector for X coordinates: [Y_x, 0, 0, 0]
+    const Yx: number[] = [];
+    for (let i = 0; i < n; i++) {
+      Yx[i] = Y[i][0];
+    }
+    Yx[n] = 0;
+    Yx[n + 1] = 0;
+    Yx[n + 2] = 0;
+    
+    // Build target vector for Y coordinates: [Y_y, 0, 0, 0]
+    const Yy: number[] = [];
+    for (let i = 0; i < n; i++) {
+      Yy[i] = Y[i][1];
+    }
+    Yy[n] = 0;
+    Yy[n + 1] = 0;
+    Yy[n + 2] = 0;
+    
+    // Solve linear systems: L * coeffs_x = Yx and L * coeffs_y = Yy
+    const coeffsX = this.solveLinearSystem(L, Yx);
+    const coeffsY = this.solveLinearSystem(L, Yy);
+    
+    // Extract weights (first n coefficients) and affine part (last 3 coefficients)
+    const weights: number[][] = [];
+    for (let i = 0; i < n; i++) {
+      weights[i] = [coeffsX[i], coeffsY[i]];
+    }
+    
+    const affine: number[][] = [
+      [coeffsX[n], coeffsY[n]],     // a1
+      [coeffsX[n + 1], coeffsY[n + 1]], // ax
+      [coeffsX[n + 2], coeffsY[n + 2]]  // ay
+    ];
+    
+    return { weights, affine };
   }
 
   /**
-   * Apply TPS transformation to a point
+   * Solve linear system Ax = b using Gaussian elimination with partial pivoting
    */
-  private applyTPSTransform(point: Point, controlPoints: Point[], tpsMatrix: number[][]): Point {
-    // Simplified TPS application
-    // In production, this would use the full TPS formula
+  private solveLinearSystem(A: number[][], b: number[]): number[] {
+    const n = A.length;
+    // Create augmented matrix [A | b]
+    const augmented: number[][] = [];
+    for (let i = 0; i < n; i++) {
+      augmented[i] = [...A[i], b[i]];
+    }
     
-    // For now, use barycentric interpolation as a simpler alternative
-    return this.barycentricInterpolate(point, controlPoints, tpsMatrix);
+    // Forward elimination with partial pivoting
+    for (let i = 0; i < n; i++) {
+      // Find pivot
+      let maxRow = i;
+      for (let k = i + 1; k < n; k++) {
+        if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+          maxRow = k;
+        }
+      }
+      
+      // Swap rows
+      [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+      
+      // Check for singular matrix
+      if (Math.abs(augmented[i][i]) < 1e-10) {
+        // Use small epsilon instead of zero to handle near-singular cases
+        augmented[i][i] = 1e-10;
+      }
+      
+      // Eliminate
+      for (let k = i + 1; k < n; k++) {
+        const factor = augmented[k][i] / augmented[i][i];
+        for (let j = i; j < n + 1; j++) {
+          augmented[k][j] -= factor * augmented[i][j];
+        }
+      }
+    }
+    
+    // Back substitution
+    const x: number[] = new Array(n);
+    for (let i = n - 1; i >= 0; i--) {
+      x[i] = augmented[i][n];
+      for (let j = i + 1; j < n; j++) {
+        x[i] -= augmented[i][j] * x[j];
+      }
+      x[i] /= augmented[i][i];
+    }
+    
+    return x;
   }
 
-  private barycentricInterpolate(point: Point, controlPoints: Point[], targetPoints: number[][]): Point {
-    // Find the three nearest control points
-    const distances = controlPoints.map((cp, i) => ({
-      index: i,
-      distance: Math.sqrt(Math.pow(point.x - cp.x, 2) + Math.pow(point.y - cp.y, 2))
-    })).sort((a, b) => a.distance - b.distance);
-
-    const nearest = distances.slice(0, 3);
-    const totalDist = nearest.reduce((sum, n) => sum + 1 / (n.distance + 0.001), 0);
-
-    let x = 0, y = 0;
-    nearest.forEach(n => {
-      const weight = (1 / (n.distance + 0.001)) / totalDist;
-      x += targetPoints[n.index][0] * weight;
-      y += targetPoints[n.index][1] * weight;
-    });
-
-    return { x, y };
+  /**
+   * Apply TPS transformation to a point using full TPS formula
+   */
+  private applyTPSTransform(point: Point, controlPoints: Point[], tpsCoeffs: { weights: number[][], affine: number[][] }): Point {
+    // TPS formula: f(x,y) = a1 + ax*x + ay*y + sum(wi * U(||pi - (x,y)||))
+    // Where U(r) = r^2 * log(r^2) is the radial basis function
+    
+    const { weights, affine } = tpsCoeffs;
+    const [a1, ax, ay] = affine;
+    
+    // Affine part
+    let fx = a1[0] + ax[0] * point.x + ay[0] * point.y;
+    let fy = a1[1] + ax[1] * point.x + ay[1] * point.y;
+    
+    // Non-rigid part: sum of weighted radial basis functions
+    for (let i = 0; i < controlPoints.length; i++) {
+      const cp = controlPoints[i];
+      const dx = point.x - cp.x;
+      const dy = point.y - cp.y;
+      const r2 = dx * dx + dy * dy;
+      
+      if (r2 > 1e-10) {
+        // U(r) = r^2 * log(r^2)
+        const U = r2 * Math.log(r2);
+        fx += weights[i][0] * U;
+        fy += weights[i][1] * U;
+      }
+      // If r2 is very small (point is at control point), U = 0, so skip
+    }
+    
+    return { x: fx, y: fy };
   }
 
   /**

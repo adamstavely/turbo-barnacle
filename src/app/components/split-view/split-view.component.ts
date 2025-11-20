@@ -20,11 +20,11 @@ import { CanvasImageComponent } from '../canvas-image/canvas-image.component';
       <div class="split-view-header">
         <h3>Split View</h3>
         <button mat-icon-button (click)="toggleSplitView()">
-          <mat-icon>{{ isEnabled() ? 'close' : 'compare' }}</mat-icon>
+          <mat-icon>{{ enabled ? 'close' : 'compare' }}</mat-icon>
         </button>
       </div>
 
-      @if (isEnabled()) {
+      @if (enabled) {
         <div class="split-view-content">
           <div class="split-panel left-panel" [style.width.%]="splitPosition()">
             <div class="panel-label">Original</div>
@@ -141,15 +141,15 @@ export class SplitViewComponent {
   @Input() originalImageUrl: string | null = null;
   @Input() enhancedImageData: ImageData | null = null;
   @Input() enhancedImageUrl: string | null = null;
+  @Input() enabled: boolean = false;
   @Output() splitViewToggled = new EventEmitter<boolean>();
 
-  isEnabled = signal(false);
   splitPosition = signal(50);
   isDragging = signal(false);
 
   toggleSplitView(): void {
-    this.isEnabled.set(!this.isEnabled());
-    this.splitViewToggled.emit(this.isEnabled());
+    // Emit event to parent - parent controls the enabled state
+    this.splitViewToggled.emit(!this.enabled);
   }
 
   startDrag(event: MouseEvent): void {

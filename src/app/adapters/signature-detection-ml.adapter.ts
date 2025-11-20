@@ -1,30 +1,196 @@
 import { SignatureDetectionAdapter } from './signature-detection-adapter.interface';
 import { Signature } from '../models/signature.interface';
+import * as tf from '@tensorflow/tfjs';
 
 export class SignatureDetectionMlAdapter implements SignatureDetectionAdapter {
   name = 'ML Signature Detection';
   private endpoint?: string;
+  private modelPath?: string;
+  private model: tf.LayersModel | null = null;
+  private modelLoaded = false;
 
-  constructor(config?: { endpoint?: string }) {
+  constructor(config?: { endpoint?: string; modelPath?: string }) {
     this.endpoint = config?.endpoint;
+    this.modelPath = config?.modelPath || '/models/signature-detection/model.json';
   }
 
   async initialize(): Promise<void> {
-    // Placeholder for ML model loading
-    // In production, this could load TensorFlow.js models or connect to a backend API
-    if (!this.endpoint) {
-      console.warn('Signature detection adapter: No endpoint configured. Using heuristic detection.');
+    // Try to load TensorFlow.js model if available
+    try {
+      if (typeof window !== 'undefined' && typeof tf !== 'undefined') {
+        await this.loadTensorFlowModel();
+      } else if (!this.endpoint) {
+        console.warn('Signature detection adapter: No endpoint or TensorFlow.js available. Using heuristic detection.');
+      }
+    } catch (error) {
+      console.warn('Signature detection adapter initialization failed:', error);
+      if (!this.endpoint) {
+        console.warn('Signature detection adapter: Falling back to heuristic detection.');
+      }
+    }
+  }
+
+  private async loadTensorFlowModel(): Promise<void> {
+    try {
+      // Load TensorFlow.js model
+      this.model = await tf.loadLayersModel(this.modelPath!);
+      this.modelLoaded = true;
+      console.log('Signature detection TensorFlow.js model loaded successfully');
+    } catch (error) {
+      console.warn('Failed to load signature detection TensorFlow.js model:', error);
+      this.modelLoaded = false;
+      // Don't throw - allow fallback to API or heuristics
     }
   }
 
   async detectSignatures(imageData: ImageData): Promise<Signature[]> {
-    // If endpoint is provided, use backend API
+    // Priority: TensorFlow.js model > API endpoint > Heuristic detection
+    
+    if (this.modelLoaded && this.model) {
+      try {
+        return await this.detectViaTensorFlow(imageData);
+      } catch (error) {
+        console.warn('TensorFlow.js signature detection failed, falling back:', error);
+        // Fall through to next method
+      }
+    }
+    
     if (this.endpoint) {
-      return this.detectViaApi(imageData);
+      try {
+        return await this.detectViaApi(imageData);
+      } catch (error) {
+        console.warn('API signature detection failed, falling back to heuristics:', error);
+        // Fall through to heuristics
+      }
     }
 
-    // Otherwise, use heuristic detection (look for regions with high stroke density and low text)
+    // Fallback to heuristic detection
     return this.detectHeuristic(imageData);
+  }
+
+  private async detectViaTensorFlow(imageData: ImageData): Promise<Signature[]> {
+    if (!this.model || !this.modelLoaded) {
+      throw new Error('TensorFlow.js model not loaded');
+    }
+
+    try {
+      // Preprocess image for model input
+      // Most models expect a specific input size (e.g., 640x640 or 416x416)
+      const inputSize = 640; // Common size for object detection models
+      const processed = this.preprocessImage(imageData, inputSize);
+      
+      // Convert to tensor and normalize
+      const tensor = tf.browser.fromPixels(processed).expandDims(0);
+      const normalized = tensor.div(255.0);
+
+      // Run model prediction
+      const prediction = this.model.predict(normalized) as tf.Tensor;
+      
+      // Post-process results to extract bounding boxes
+      const signatures = await this.postProcessResults(prediction, imageData.width, imageData.height, inputSize);
+
+      // Clean up tensors
+      tensor.dispose();
+      normalized.dispose();
+      prediction.dispose();
+
+      return signatures;
+    } catch (error) {
+      console.error('TensorFlow.js signature detection failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Preprocess image for model input (resize to model input size)
+   */
+  private preprocessImage(imageData: ImageData, targetSize: number): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = targetSize;
+    canvas.height = targetSize;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get canvas context');
+
+    // Create temporary canvas with original image
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) throw new Error('Failed to get canvas context');
+    tempCtx.putImageData(imageData, 0, 0);
+
+    // Draw resized image maintaining aspect ratio
+    const scale = Math.min(targetSize / imageData.width, targetSize / imageData.height);
+    const scaledWidth = imageData.width * scale;
+    const scaledHeight = imageData.height * scale;
+    const offsetX = (targetSize - scaledWidth) / 2;
+    const offsetY = (targetSize - scaledHeight) / 2;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, targetSize, targetSize);
+    ctx.drawImage(tempCanvas, offsetX, offsetY, scaledWidth, scaledHeight);
+
+    return canvas;
+  }
+
+  /**
+   * Post-process model output to extract signature bounding boxes
+   * This is a generic implementation - actual format depends on model architecture
+   */
+  private async postProcessResults(
+    prediction: tf.Tensor,
+    originalWidth: number,
+    originalHeight: number,
+    inputSize: number
+  ): Promise<Signature[]> {
+    const data = await prediction.data();
+    const shape = prediction.shape;
+    const signatures: Signature[] = [];
+
+    // Model output format depends on architecture:
+    // - YOLO-style: [batch, num_detections, 5+classes] where 5 = [x, y, w, h, confidence]
+    // - SSD-style: [batch, num_boxes, 4+classes+confidence]
+    // - Custom: varies
+    
+    // Generic parsing - assumes output is [batch, num_detections, 6] where 6 = [x, y, w, h, confidence, class]
+    // Adjust based on actual model output format
+    if (shape.length === 3 && shape[2] >= 5) {
+      const numDetections = shape[1];
+      const scaleX = originalWidth / inputSize;
+      const scaleY = originalHeight / inputSize;
+
+      for (let i = 0; i < numDetections; i++) {
+        const baseIdx = i * shape[2];
+        const confidence = data[baseIdx + 4];
+        
+        // Filter by confidence threshold
+        if (confidence > 0.5) {
+          const x = data[baseIdx] * scaleX;
+          const y = data[baseIdx + 1] * scaleY;
+          const width = data[baseIdx + 2] * scaleX;
+          const height = data[baseIdx + 3] * scaleY;
+
+          signatures.push({
+            id: `signature-tf-${Date.now()}-${i}`,
+            boundingBox: {
+              id: `sig-tf-${Date.now()}-${i}`,
+              x: Math.max(0, Math.round(x)),
+              y: Math.max(0, Math.round(y)),
+              width: Math.min(originalWidth - Math.round(x), Math.round(width)),
+              height: Math.min(originalHeight - Math.round(y), Math.round(height)),
+              text: '',
+              confidence: confidence
+            },
+            confidence: confidence
+          });
+        }
+      }
+    } else {
+      // Fallback: if output format is unexpected, return empty and let heuristics handle it
+      console.warn('Unexpected model output format, falling back to heuristics');
+    }
+
+    return signatures;
   }
 
   private async detectViaApi(imageData: ImageData): Promise<Signature[]> {

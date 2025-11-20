@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { MatSliderModule } from '@angular/material/slider';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { FormsModule } from '@angular/forms';
 
 export interface MeshPoint {
@@ -25,6 +26,7 @@ export interface MeshPoint {
     MatDialogModule,
     MatSliderModule,
     MatFormFieldModule,
+    MatInputModule,
     FormsModule
   ],
   template: `

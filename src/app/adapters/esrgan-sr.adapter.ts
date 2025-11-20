@@ -1,21 +1,23 @@
 import { SuperResolutionAdapter } from './super-resolution-adapter.interface';
+import * as tf from '@tensorflow/tfjs';
 
 export class EsrganSrAdapter implements SuperResolutionAdapter {
   name = 'ESRGAN';
   private endpoint?: string;
-  private model?: any; // TensorFlow.js model
+  private modelPath?: string;
+  private model: tf.LayersModel | null = null;
   private modelLoaded = false;
 
   constructor(config?: { endpoint?: string; modelPath?: string }) {
     this.endpoint = config?.endpoint;
-    // In production, modelPath could be used to load TensorFlow.js models
+    this.modelPath = config?.modelPath || '/models/esrgan/model.json';
   }
 
   async initialize(): Promise<void> {
     // Try to load TensorFlow.js model if available
     try {
       // Check if TensorFlow.js is available
-      if (typeof window !== 'undefined' && (window as any).tf) {
+      if (typeof window !== 'undefined' && typeof tf !== 'undefined') {
         await this.loadTensorFlowModel();
       } else if (this.endpoint) {
         // Test endpoint connectivity
@@ -32,15 +34,16 @@ export class EsrganSrAdapter implements SuperResolutionAdapter {
   }
 
   private async loadTensorFlowModel(): Promise<void> {
-    // Placeholder for TensorFlow.js model loading
-    // Example structure:
-    // const tf = (window as any).tf;
-    // this.model = await tf.loadLayersModel('/models/esrgan/model.json');
-    // this.modelLoaded = true;
-    // console.log('ESRGAN TensorFlow.js model loaded');
-    
-    // For now, mark as not loaded since we don't have the model
-    this.modelLoaded = false;
+    try {
+      // Load TensorFlow.js model
+      this.model = await tf.loadLayersModel(this.modelPath!);
+      this.modelLoaded = true;
+      console.log('ESRGAN TensorFlow.js model loaded successfully');
+    } catch (error) {
+      console.warn('Failed to load ESRGAN TensorFlow.js model:', error);
+      this.modelLoaded = false;
+      // Don't throw - allow fallback to API or bicubic
+    }
   }
 
   async upscale(imageData: ImageData, scaleFactor: number): Promise<ImageData> {
@@ -64,17 +67,86 @@ export class EsrganSrAdapter implements SuperResolutionAdapter {
   }
 
   private async upscaleViaTensorFlow(imageData: ImageData, scaleFactor: number): Promise<ImageData> {
-    // TensorFlow.js implementation
-    // This would use the loaded model to perform super-resolution
-    // Example structure:
-    // const tf = (window as any).tf;
-    // const tensor = tf.browser.fromPixels(imageData);
-    // const upscaled = this.model.predict(tensor);
-    // const upscaledData = await upscaled.data();
-    // return this.tensorToImageData(upscaled, imageData.width * scaleFactor, imageData.height * scaleFactor);
+    if (!this.model || !this.modelLoaded) {
+      throw new Error('TensorFlow.js model not loaded');
+    }
+
+    try {
+      // Convert ImageData to TensorFlow tensor
+      // Create a temporary canvas to convert ImageData
+      const canvas = document.createElement('canvas');
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to get canvas context');
+      ctx.putImageData(imageData, 0, 0);
+
+      // Convert canvas to tensor (normalized to [0, 1])
+      const tensor = tf.browser.fromPixels(canvas).expandDims(0);
+      const normalized = tensor.div(255.0);
+
+      // Run model prediction
+      const prediction = this.model.predict(normalized) as tf.Tensor;
+      
+      // Handle different output shapes - some models output [batch, height, width, channels]
+      // Some may need additional processing based on scale factor
+      let upscaled = prediction;
+      
+      // If model doesn't handle the scale factor directly, we may need to interpolate
+      // For now, assume model outputs at the desired scale
+      if (prediction.shape[1] !== imageData.height * scaleFactor || 
+          prediction.shape[2] !== imageData.width * scaleFactor) {
+        // Model output doesn't match expected scale - use bicubic fallback
+        tensor.dispose();
+        normalized.dispose();
+        prediction.dispose();
+        return this.fallbackToBicubic(imageData, scaleFactor);
+      }
+
+      // Denormalize and convert back to ImageData
+      const denormalized = upscaled.mul(255.0).clipByValue(0, 255);
+      const squeezed = denormalized.squeeze([0]); // Remove batch dimension
+      
+      const result = await this.tensorToImageData(
+        squeezed,
+        imageData.width * scaleFactor,
+        imageData.height * scaleFactor
+      );
+
+      // Clean up tensors
+      tensor.dispose();
+      normalized.dispose();
+      prediction.dispose();
+      denormalized.dispose();
+      squeezed.dispose();
+
+      return result;
+    } catch (error) {
+      console.error('TensorFlow.js upscaling failed:', error);
+      return this.fallbackToBicubic(imageData, scaleFactor);
+    }
+  }
+
+  /**
+   * Convert TensorFlow tensor to ImageData
+   */
+  private async tensorToImageData(tensor: tf.Tensor, width: number, height: number): Promise<ImageData> {
+    const data = await tensor.data();
+    const imageData = new ImageData(width, height);
     
-    // For now, fallback since model isn't loaded
-    return this.fallbackToBicubic(imageData, scaleFactor);
+    // Tensor is typically [height, width, channels] with channels in RGB order
+    let idx = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const pixelIdx = (y * width + x) * 3;
+        imageData.data[idx++] = Math.round(data[pixelIdx]);     // R
+        imageData.data[idx++] = Math.round(data[pixelIdx + 1]); // G
+        imageData.data[idx++] = Math.round(data[pixelIdx + 2]); // B
+        imageData.data[idx++] = 255; // Alpha
+      }
+    }
+    
+    return imageData;
   }
   
   private async fallbackToBicubic(imageData: ImageData, scaleFactor: number): Promise<ImageData> {

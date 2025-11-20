@@ -45,7 +45,7 @@ import { EngineSelectorComponent } from '../engine-selector/engine-selector.comp
       <button mat-icon-button (click)="onClear()" [disabled]="!canClear">
         <mat-icon>clear</mat-icon>
       </button>
-      <button mat-raised-button color="accent" (click)="compareEngines.emit()" [disabled]="!canRunOcr">
+      <button mat-raised-button color="accent" (click)="onCompareEngines()" [disabled]="!canRunOcr">
         <mat-icon>compare_arrows</mat-icon>
         Compare
       </button>

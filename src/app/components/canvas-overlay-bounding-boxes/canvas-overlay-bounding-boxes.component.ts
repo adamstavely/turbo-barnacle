@@ -23,8 +23,9 @@ import { MaskRegion } from '../../models/mask-region.interface';
       styles: [`
         canvas {
           position: absolute;
-          top: 0;
-          left: 0;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
           pointer-events: auto;
           cursor: crosshair;
           outline: none;
@@ -78,7 +79,7 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['boundingBoxes'] || changes['selectedBoxId'] || changes['canvasWidth'] || changes['canvasHeight'] || changes['maskRegions'] || changes['isMaskMode']) {
+    if (changes['boundingBoxes'] || changes['selectedBoxId'] || changes['canvasWidth'] || changes['canvasHeight'] || changes['displayWidth'] || changes['displayHeight'] || changes['scaleX'] || changes['scaleY'] || changes['maskRegions'] || changes['isMaskMode']) {
       this.draw();
     }
   }

@@ -1,9 +1,8 @@
-import { Component, OnInit, signal, computed, HostListener, ViewChild } from '@angular/core';
+import { Component, OnInit, signal, computed, HostListener, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ToolbarComponent } from '../toolbar/toolbar.component';
 import { ImageLoaderComponent } from '../image-loader/image-loader.component';
 import { CanvasContainerComponent } from '../canvas-container/canvas-container.component';
-import { CanvasOverlayBoundingBoxesComponent } from '../canvas-overlay-bounding-boxes/canvas-overlay-bounding-boxes.component';
 import { EnhancementToolsPanelComponent } from '../enhancement-tools-panel/enhancement-tools-panel.component';
 import { WarpToolsPanelComponent } from '../warp-tools-panel/warp-tools-panel.component';
 import { BoundingBoxEditorComponent } from '../bounding-box-editor/bounding-box-editor.component';
@@ -54,7 +53,6 @@ import { OcrResult } from '../../models/ocr-result.interface';
     ToolbarComponent,
     ImageLoaderComponent,
     CanvasContainerComponent,
-    CanvasOverlayBoundingBoxesComponent,
     EnhancementToolsPanelComponent,
     WarpToolsPanelComponent,
     BoundingBoxEditorComponent,
@@ -135,6 +133,7 @@ import { OcrResult } from '../../models/ocr-result.interface';
             <div class="center-panel">
               @if (splitViewEnabled()) {
                 <app-split-view
+                  [enabled]="splitViewEnabled()"
                   [originalImageData]="state().originalImageData"
                   [originalImageUrl]="state().imageUrl"
                   [enhancedImageData]="processedImageData()"
@@ -142,39 +141,41 @@ import { OcrResult } from '../../models/ocr-result.interface';
                   (splitViewToggled)="onSplitViewToggled($event)">
                 </app-split-view>
               } @else {
-                <div class="canvas-wrapper" style="position: relative;">
+                <div class="canvas-wrapper">
                   <app-canvas-container
+                    #canvasContainer
                     [imageData]="processedImageData()"
                     [imageUrl]="state().imageUrl"
-                    [magnifierEnabled]="magnifierEnabled()">
+                    [magnifierEnabled]="magnifierEnabled()"
+                    [hasImage]="hasImage()"
+                    [showOverlay]="true"
+                    [boundingBoxes]="state().boundingBoxes"
+                    [selectedBoxId]="state().selectedBoxId"
+                    [canvasWidth]="canvasDimensions()?.canvasWidth || state().width"
+                    [canvasHeight]="canvasDimensions()?.canvasHeight || state().height"
+                    [displayWidth]="canvasDimensions()?.displayWidth || 800"
+                    [displayHeight]="canvasDimensions()?.displayHeight || 600"
+                    [scaleX]="getScaleX()"
+                    [scaleY]="getScaleY()"
+                    [maskRegions]="maskService.getMaskRegions()"
+                    [isMaskMode]="isMaskMode()"
+                    (dimensionsChanged)="onCanvasDimensionsChanged($event)"
+                    (boxSelected)="onBoxSelected($event)"
+                    (boxMoved)="onBoxMoved($event)"
+                    (boxResized)="onBoxResized($event)"
+                    (boxDeleted)="onBoxDeleted($event)"
+                    (boxCreated)="onBoxCreated($event)"
+                    (maskCreated)="onMaskCreated($event)">
                   </app-canvas-container>
                   @if (hasImage()) {
-                    <app-canvas-overlay-bounding-boxes
-                      [boundingBoxes]="state().boundingBoxes"
-                      [selectedBoxId]="state().selectedBoxId"
-                      [canvasWidth]="state().width"
-                      [canvasHeight]="state().height"
-                      [displayWidth]="800"
-                      [displayHeight]="600"
-                      [scaleX]="1"
-                      [scaleY]="1"
-                      [maskRegions]="maskService.getMaskRegions()"
-                      [isMaskMode]="isMaskMode()"
-                      (boxSelected)="onBoxSelected($event)"
-                      (boxMoved)="onBoxMoved($event)"
-                      (boxResized)="onBoxResized($event)"
-                      (boxDeleted)="onBoxDeleted($event)"
-                      (boxCreated)="onBoxCreated($event)"
-                      (maskCreated)="onMaskCreated($event)">
-                    </app-canvas-overlay-bounding-boxes>
                     <app-confidence-heatmap
                       [boundingBoxes]="state().boundingBoxes"
-                      [canvasWidth]="state().width"
-                      [canvasHeight]="state().height"
-                      [displayWidth]="800"
-                      [displayHeight]="600"
-                      [scaleX]="1"
-                      [scaleY]="1"
+                      [canvasWidth]="canvasDimensions()?.canvasWidth || state().width"
+                      [canvasHeight]="canvasDimensions()?.canvasHeight || state().height"
+                      [displayWidth]="canvasDimensions()?.displayWidth || 800"
+                      [displayHeight]="canvasDimensions()?.displayHeight || 600"
+                      [scaleX]="getScaleX()"
+                      [scaleY]="getScaleY()"
                       [enabled]="showHeatmap()">
                     </app-confidence-heatmap>
                   }
@@ -272,8 +273,15 @@ export class OcrAppRootComponent implements OnInit {
   currentOcrOptions = signal<OcrOptions | undefined>(undefined);
   previewRegion = signal({ x: 0, y: 0, width: 0, height: 0 });
   detectedSignatures = signal<Signature[]>([]);
+  canvasDimensions = signal<{
+    canvasWidth: number;
+    canvasHeight: number;
+    displayWidth: number;
+    displayHeight: number;
+  } | null>(null);
 
   @ViewChild('ocrPreview') ocrPreviewComponent!: OcrPreviewComponent;
+  @ViewChild('canvasContainer') canvasContainerComponent!: CanvasContainerComponent;
 
   state = computed(() => this.stateStore.getState()());
   
@@ -302,7 +310,8 @@ export class OcrAppRootComponent implements OnInit {
     private auditLog: AuditLogService,
     private superResolution: SuperResolutionService,
     private ocrPreview: OcrPreviewService,
-    private signatureDetection: SignatureDetectionService
+    private signatureDetection: SignatureDetectionService,
+    private cdr: ChangeDetectorRef
   ) {
     // Initialize audit logging
     this.auditLog.initialize().catch(err => console.error('Failed to initialize audit log:', err));
@@ -417,6 +426,14 @@ export class OcrAppRootComponent implements OnInit {
     );
     this.processedImageData.set(event.imageData);
     this.undoRedo.saveState(this.stateStore.getState()());
+    
+    // Query canvas dimensions after a short delay to ensure canvas is rendered
+    setTimeout(() => {
+      const dims = this.canvasContainerComponent?.getCanvasDimensions();
+      if (dims) {
+        this.onCanvasDimensionsChanged(dims);
+      }
+    }, 100);
   }
 
   async processBatchPdf(file: File, pageNumbers: number[]): Promise<void> {
@@ -919,6 +936,27 @@ export class OcrAppRootComponent implements OnInit {
              box2.x + box2.width < box1.x ||
              box1.y + box1.height < box2.y ||
              box2.y + box2.height < box1.y);
+  }
+
+  onCanvasDimensionsChanged(dimensions: {
+    canvasWidth: number;
+    canvasHeight: number;
+    displayWidth: number;
+    displayHeight: number;
+  }): void {
+    this.canvasDimensions.set(dimensions);
+  }
+
+  getScaleX(): number {
+    const dims = this.canvasDimensions();
+    if (!dims || dims.canvasWidth === 0) return 1;
+    return dims.displayWidth / dims.canvasWidth;
+  }
+
+  getScaleY(): number {
+    const dims = this.canvasDimensions();
+    if (!dims || dims.canvasHeight === 0) return 1;
+    return dims.displayHeight / dims.canvasHeight;
   }
 
   onBoxSelected(boxId: string): void {
