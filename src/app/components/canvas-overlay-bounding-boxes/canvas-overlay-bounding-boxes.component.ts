@@ -71,16 +71,35 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
   private originalAspectRatio = 1;
 
   ngAfterViewInit(): void {
+    this.initializeContext();
+  }
+
+  private initializeContext(): void {
     const canvas = this.overlayCanvasRef?.nativeElement;
-    if (canvas) {
+    if (canvas && !this.ctx) {
       this.ctx = canvas.getContext('2d');
-      this.draw();
+      if (this.ctx) {
+        this.draw();
+      }
     }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    // Ensure context is initialized before drawing
+    if (!this.ctx) {
+      this.initializeContext();
+    }
+    
     if (changes['boundingBoxes'] || changes['selectedBoxId'] || changes['canvasWidth'] || changes['canvasHeight'] || changes['displayWidth'] || changes['displayHeight'] || changes['scaleX'] || changes['scaleY'] || changes['maskRegions'] || changes['isMaskMode']) {
-      this.draw();
+      // Use setTimeout to ensure canvas is ready
+      setTimeout(() => {
+        if (!this.ctx) {
+          this.initializeContext();
+        }
+        if (this.ctx) {
+          this.draw();
+        }
+      }, 0);
     }
   }
 
@@ -280,7 +299,21 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
   }
 
   private draw(): void {
-    if (!this.ctx) return;
+    if (!this.ctx) {
+      console.warn('Canvas overlay: No context available');
+      return;
+    }
+
+    // Guard: Ensure canvas has valid dimensions
+    if (this.canvasWidth <= 0 || this.canvasHeight <= 0) {
+      console.warn('Canvas overlay: Invalid dimensions', {
+        canvasWidth: this.canvasWidth,
+        canvasHeight: this.canvasHeight,
+        displayWidth: this.displayWidth,
+        displayHeight: this.displayHeight
+      });
+      return;
+    }
 
     this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
 
@@ -293,8 +326,24 @@ export class CanvasOverlayBoundingBoxesComponent implements AfterViewInit, OnCha
       this.ctx!.strokeRect(mask.x, mask.y, mask.width, mask.height);
     });
 
+    // Log bounding boxes being drawn
+    if (this.boundingBoxes.length > 0) {
+      console.log('Canvas overlay: Drawing bounding boxes', {
+        count: this.boundingBoxes.length,
+        canvasWidth: this.canvasWidth,
+        canvasHeight: this.canvasHeight,
+        firstBox: this.boundingBoxes[0]
+      });
+    }
+
     this.boundingBoxes.forEach(box => {
       const isSelected = box.id === this.selectedBoxId;
+      
+      // Validate box coordinates
+      if (box.width <= 0 || box.height <= 0) {
+        console.warn('Canvas overlay: Invalid box dimensions', box);
+        return;
+      }
       
       // Draw box
       this.ctx!.strokeStyle = isSelected ? '#2196F3' : '#4CAF50';

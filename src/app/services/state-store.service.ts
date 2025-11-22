@@ -60,11 +60,25 @@ export class StateStoreService {
   }
 
   addOcrResult(result: OcrResult): void {
-    this.state.update(current => ({
-      ...current,
-      ocrResults: [...current.ocrResults, result],
-      boundingBoxes: result.boundingBoxes
-    }));
+    console.log('StateStore: Adding OCR result', {
+      boundingBoxCount: result.boundingBoxes?.length || 0,
+      hasBoundingBoxes: !!result.boundingBoxes && result.boundingBoxes.length > 0
+    });
+    
+    this.state.update(current => {
+      const newState = {
+        ...current,
+        ocrResults: [...current.ocrResults, result],
+        boundingBoxes: result.boundingBoxes || []
+      };
+      
+      console.log('StateStore: Updated state', {
+        boundingBoxCount: newState.boundingBoxes.length,
+        previousCount: current.boundingBoxes.length
+      });
+      
+      return newState;
+    });
   }
 
   updateBoundingBox(boxId: string, updates: Partial<BoundingBox>): void {

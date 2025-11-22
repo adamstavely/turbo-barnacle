@@ -67,6 +67,9 @@ import { EngineSelectorComponent } from '../engine-selector/engine-selector.comp
       <button mat-icon-button (click)="toggleHeatmap.emit()" [disabled]="!canRunOcr" matTooltip="Toggle Confidence Heatmap (H)">
         <mat-icon>gradient</mat-icon>
       </button>
+      <button mat-icon-button (click)="toggleBoundingBoxes.emit()" [disabled]="!canRunOcr" matTooltip="Toggle Bounding Boxes (B)">
+        <mat-icon>crop_free</mat-icon>
+      </button>
     </mat-toolbar>
   `,
   styles: [`
@@ -112,6 +115,7 @@ export class ToolbarComponent {
   @Output() toggleSplitView = new EventEmitter<void>();
   @Output() toggleMagnifier = new EventEmitter<void>();
   @Output() toggleHeatmap = new EventEmitter<void>();
+  @Output() toggleBoundingBoxes = new EventEmitter<void>();
 
   onRunOcr(): void {
     this.runOcr.emit();

@@ -45,6 +45,29 @@ import { imageDataToBlob } from '../../utils/image-helpers';
 import { BoundingBox } from '../../models/bounding-box.interface';
 import { OcrResult } from '../../models/ocr-result.interface';
 
+type EnhancementTransformState = {
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  gamma?: number;
+  sharpen?: number;
+  denoise?: number;
+  bilateralDenoise?: number;
+  edgeEnhancement?: number;
+  moireIntensity?: number;
+  binarization?: boolean;
+  binarizationMethod?: 'otsu' | 'niblack' | 'sauvola';
+  colorChannel?: 'red' | 'green' | 'blue' | 'hue' | 'saturation' | 'value' | 'lightness' | 'a-channel' | 'b-channel' | null;
+  highlightRemoval?: 'soft' | 'medium' | 'aggressive' | null;
+  clahe?: boolean;
+  removeShadows?: boolean;
+  removeGlare?: boolean;
+  whitenBackground?: boolean;
+  autoLighting?: boolean;
+  superResolution?: number;
+  superResolutionMethod?: 'bicubic' | 'esrgan';
+};
+
 @Component({
   selector: 'app-ocr-app-root',
   standalone: true,
@@ -84,7 +107,8 @@ import { OcrResult } from '../../models/ocr-result.interface';
         (loadState)="onLoadState()"
         (toggleSplitView)="splitViewEnabled.set(!splitViewEnabled())"
         (toggleMagnifier)="magnifierEnabled.set(!magnifierEnabled())"
-        (toggleHeatmap)="showHeatmap.set(!showHeatmap())">
+        (toggleHeatmap)="showHeatmap.set(!showHeatmap())"
+        (toggleBoundingBoxes)="showBoundingBoxes.set(!showBoundingBoxes())">
       </app-toolbar>
 
       <div class="main-content">
@@ -148,13 +172,13 @@ import { OcrResult } from '../../models/ocr-result.interface';
                     [imageUrl]="state().imageUrl"
                     [magnifierEnabled]="magnifierEnabled()"
                     [hasImage]="hasImage()"
-                    [showOverlay]="true"
+                    [showOverlay]="showBoundingBoxes()"
                     [boundingBoxes]="state().boundingBoxes"
                     [selectedBoxId]="state().selectedBoxId"
-                    [canvasWidth]="canvasDimensions()?.canvasWidth || state().width"
-                    [canvasHeight]="canvasDimensions()?.canvasHeight || state().height"
-                    [displayWidth]="canvasDimensions()?.displayWidth || 800"
-                    [displayHeight]="canvasDimensions()?.displayHeight || 600"
+                    [canvasWidth]="getCanvasWidth()"
+                    [canvasHeight]="getCanvasHeight()"
+                    [displayWidth]="getDisplayWidth()"
+                    [displayHeight]="getDisplayHeight()"
                     [scaleX]="getScaleX()"
                     [scaleY]="getScaleY()"
                     [maskRegions]="maskService.getMaskRegions()"
@@ -270,6 +294,7 @@ export class OcrAppRootComponent implements OnInit {
   magnifierEnabled = signal(false);
   isMaskMode = signal(false);
   showHeatmap = signal(false);
+  showBoundingBoxes = signal(true);
   currentOcrOptions = signal<OcrOptions | undefined>(undefined);
   previewRegion = signal({ x: 0, y: 0, width: 0, height: 0 });
   detectedSignatures = signal<Signature[]>([]);
@@ -279,6 +304,13 @@ export class OcrAppRootComponent implements OnInit {
     displayWidth: number;
     displayHeight: number;
   } | null>(null);
+
+  // Store all current enhancement transform values
+  enhancementTransforms = signal<EnhancementTransformState>({});
+
+  // Debounce timer for expensive operations like denoise
+  private denoiseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly DENOISE_DEBOUNCE_DELAY = 500; // 500ms delay for denoise
 
   @ViewChild('ocrPreview') ocrPreviewComponent!: OcrPreviewComponent;
   @ViewChild('canvasContainer') canvasContainerComponent!: CanvasContainerComponent;
@@ -416,6 +448,9 @@ export class OcrAppRootComponent implements OnInit {
       return;
     }
 
+    // Clear enhancement transforms when loading a new image
+    this.enhancementTransforms.set({});
+
     this.stateStore.setImage(
       event.imageUrl,
       event.fileName,
@@ -502,7 +537,207 @@ export class OcrAppRootComponent implements OnInit {
 
   onEnhancementChange(transform: any): void {
     const currentState = this.state();
-    if (!currentState.currentImageData) return;
+    if (!currentState.currentImageData || !currentState.originalImageData) return;
+
+    // Handle reset - clear all transform state
+    if (transform.reset) {
+      // Clear any pending debounce timers
+      if (this.denoiseDebounceTimer) {
+        clearTimeout(this.denoiseDebounceTimer);
+        this.denoiseDebounceTimer = null;
+      }
+      this.enhancementTransforms.set({});
+      this.processedImageData.set(currentState.originalImageData);
+      this.stateStore.updateImageData(currentState.originalImageData);
+      return;
+    }
+
+    // Debounce denoise operations as they're computationally expensive
+    if (transform.denoise !== undefined) {
+      // Clear existing timer
+      if (this.denoiseDebounceTimer) {
+        clearTimeout(this.denoiseDebounceTimer);
+      }
+      
+      // Set new timer
+      this.denoiseDebounceTimer = setTimeout(() => {
+        this.denoiseDebounceTimer = null;
+        // Process the denoise change after debounce delay
+        this.processEnhancementChange(transform);
+      }, this.DENOISE_DEBOUNCE_DELAY);
+      
+      return; // Don't process immediately for denoise
+    }
+    
+    // For all other transforms, process immediately
+    this.processEnhancementChange(transform);
+  }
+
+  private processEnhancementChange(transform: any): void {
+    const currentState = this.state();
+    if (!currentState.currentImageData || !currentState.originalImageData) return;
+
+    // Update stored transform state with new values
+    // Remove properties when they return to neutral/default values
+    // Use object spread to create new object references (not delete) for proper signal change detection
+    const currentTransforms = this.enhancementTransforms();
+    let updatedTransforms: typeof currentTransforms = { ...currentTransforms };
+
+    // Helper function to create new object without a property
+    const withoutProperty = <T extends Record<string, any>, K extends keyof T>(obj: T, key: K): Omit<T, K> => {
+      const { [key]: _, ...rest } = obj;
+      return rest;
+    };
+
+    // Update only the properties that are defined in the incoming transform
+    // Remove from state if value is neutral/default by creating new object without that property
+    if (transform.brightness !== undefined) {
+      if (transform.brightness === 0) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'brightness');
+      } else {
+        updatedTransforms = { ...updatedTransforms, brightness: transform.brightness };
+      }
+    }
+    if (transform.contrast !== undefined) {
+      if (transform.contrast === 0) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'contrast');
+      } else {
+        updatedTransforms = { ...updatedTransforms, contrast: transform.contrast };
+      }
+    }
+    if (transform.saturation !== undefined) {
+      // Saturation: 0 converts to grayscale (not neutral), 1 is full saturation (neutral)
+      // Remove from state if it's 1 (neutral) or 0 (we'll treat 0 as no-op to match slider default)
+      if (Math.abs(transform.saturation - 1) < 0.001 || Math.abs(transform.saturation) < 0.001) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'saturation');
+      } else {
+        updatedTransforms = { ...updatedTransforms, saturation: transform.saturation };
+      }
+    }
+    if (transform.gamma !== undefined) {
+      if (transform.gamma === 1) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'gamma');
+      } else {
+        updatedTransforms = { ...updatedTransforms, gamma: transform.gamma };
+      }
+    }
+    if (transform.sharpen !== undefined) {
+      if (transform.sharpen === 0) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'sharpen');
+      } else {
+        updatedTransforms = { ...updatedTransforms, sharpen: transform.sharpen };
+      }
+    }
+    if (transform.denoise !== undefined) {
+      if (transform.denoise === 0) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'denoise');
+      } else {
+        updatedTransforms = { ...updatedTransforms, denoise: transform.denoise };
+      }
+    }
+    if (transform.bilateralDenoise !== undefined) {
+      if (transform.bilateralDenoise === 0) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'bilateralDenoise');
+      } else {
+        updatedTransforms = { ...updatedTransforms, bilateralDenoise: transform.bilateralDenoise };
+      }
+    }
+    if (transform.edgeEnhancement !== undefined) {
+      if (transform.edgeEnhancement === 0) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'edgeEnhancement');
+      } else {
+        updatedTransforms = { ...updatedTransforms, edgeEnhancement: transform.edgeEnhancement };
+      }
+    }
+    if (transform.moireIntensity !== undefined) {
+      if (transform.moireIntensity === 0) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'moireIntensity');
+      } else {
+        updatedTransforms = { ...updatedTransforms, moireIntensity: transform.moireIntensity };
+      }
+    }
+    if (transform.binarization !== undefined) {
+      if (transform.binarization === false) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'binarization');
+        // Also remove binarizationMethod when binarization is disabled
+        updatedTransforms = withoutProperty(updatedTransforms, 'binarizationMethod');
+      } else {
+        updatedTransforms = { ...updatedTransforms, binarization: transform.binarization };
+      }
+    }
+    if (transform.binarizationMethod !== undefined && updatedTransforms.binarization) {
+      updatedTransforms = { ...updatedTransforms, binarizationMethod: transform.binarizationMethod };
+    }
+    if (transform.colorChannel !== undefined) {
+      if (transform.colorChannel === null) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'colorChannel');
+      } else {
+        updatedTransforms = { ...updatedTransforms, colorChannel: transform.colorChannel };
+      }
+    }
+    if (transform.highlightRemoval !== undefined) {
+      if (transform.highlightRemoval === null) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'highlightRemoval');
+      } else {
+        updatedTransforms = { ...updatedTransforms, highlightRemoval: transform.highlightRemoval };
+      }
+    }
+    if (transform.clahe !== undefined) {
+      if (transform.clahe === false) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'clahe');
+      } else {
+        updatedTransforms = { ...updatedTransforms, clahe: transform.clahe };
+      }
+    }
+    if (transform.removeShadows !== undefined) {
+      if (transform.removeShadows === false) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'removeShadows');
+      } else {
+        updatedTransforms = { ...updatedTransforms, removeShadows: transform.removeShadows };
+      }
+    }
+    if (transform.removeGlare !== undefined) {
+      if (transform.removeGlare === false) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'removeGlare');
+      } else {
+        updatedTransforms = { ...updatedTransforms, removeGlare: transform.removeGlare };
+      }
+    }
+    if (transform.whitenBackground !== undefined) {
+      if (transform.whitenBackground === false) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'whitenBackground');
+      } else {
+        updatedTransforms = { ...updatedTransforms, whitenBackground: transform.whitenBackground };
+      }
+    }
+    if (transform.autoLighting !== undefined) {
+      if (transform.autoLighting === false) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'autoLighting');
+      } else {
+        updatedTransforms = { ...updatedTransforms, autoLighting: transform.autoLighting };
+      }
+    }
+    if (transform.superResolution !== undefined) {
+      if (transform.superResolution <= 1) {
+        updatedTransforms = withoutProperty(updatedTransforms, 'superResolution');
+        updatedTransforms = withoutProperty(updatedTransforms, 'superResolutionMethod');
+      } else {
+        updatedTransforms = { ...updatedTransforms, superResolution: transform.superResolution };
+      }
+    }
+    if (transform.superResolutionMethod !== undefined && updatedTransforms.superResolution) {
+      updatedTransforms = { ...updatedTransforms, superResolutionMethod: transform.superResolutionMethod };
+    }
+
+    console.log('Transform state update:', {
+      incoming: transform,
+      before: currentTransforms,
+      after: updatedTransforms,
+      removed: Object.keys(currentTransforms).filter(k => !(k in updatedTransforms)),
+      added: Object.keys(updatedTransforms).filter(k => !(k in currentTransforms) || currentTransforms[k as keyof typeof currentTransforms] !== updatedTransforms[k as keyof typeof updatedTransforms])
+    });
+
+    this.enhancementTransforms.set(updatedTransforms);
 
     // Log preprocessing steps
     const steps: string[] = [];
@@ -522,114 +757,205 @@ export class OcrAppRootComponent implements OnInit {
       this.auditLog.logPreprocessing(steps).catch(err => console.error('Failed to log preprocessing:', err));
     }
 
-    let processed = currentState.currentImageData;
+    // Apply all transforms starting from original image
+    this.applyAllEnhancementTransforms(updatedTransforms, currentState.originalImageData);
+  }
 
-    if (transform.reset) {
-      processed = currentState.originalImageData || processed;
-    } else {
-      if (transform.brightness !== undefined) {
-        processed = this.imageProcessing.applyBrightness(processed, transform.brightness);
+  private applyAllEnhancementTransforms(transforms: EnhancementTransformState, sourceImage: ImageData): void {
+    // Clone the original image to ensure we never modify it
+    const clonedImage = new ImageData(sourceImage.width, sourceImage.height);
+    clonedImage.data.set(sourceImage.data);
+    let processed = clonedImage;
+    
+    console.log('Applying transforms from original image:', {
+      originalSize: { width: sourceImage.width, height: sourceImage.height },
+      transformCount: Object.keys(transforms).length,
+      transforms: Object.keys(transforms)
+    });
+
+    // Apply transforms in logical order:
+    // 1. Color adjustments (brightness, contrast, saturation, gamma)
+    // Only apply if value is not neutral to prevent accumulation
+    if (transforms.brightness !== undefined && Math.abs(transforms.brightness) > 0.001) {
+      processed = this.imageProcessing.applyBrightness(processed, transforms.brightness);
+    }
+    if (transforms.contrast !== undefined && Math.abs(transforms.contrast) > 0.001) {
+      processed = this.imageProcessing.applyContrast(processed, transforms.contrast);
+    }
+    if (transforms.saturation !== undefined && Math.abs(transforms.saturation - 1) > 0.001 && Math.abs(transforms.saturation) > 0.001) {
+      // Saturation: Don't apply if it's 0 (would convert to grayscale) or 1 (neutral)
+      // Only apply if it's a non-neutral, non-zero value
+      processed = this.imageProcessing.applySaturation(processed, transforms.saturation);
+    }
+    if (transforms.gamma !== undefined && Math.abs(transforms.gamma - 1) > 0.001) {
+      processed = this.imageProcessing.applyGamma(processed, transforms.gamma);
+    }
+
+    // 2. Auto lighting correction (if enabled)
+    if (transforms.autoLighting) {
+      processed = this.imageProcessing.autoLightingCorrection(processed);
+    }
+
+    // 3. Color channel isolation
+    if (transforms.colorChannel !== undefined) {
+      processed = this.imageProcessing.isolateColorChannel(processed, transforms.colorChannel);
+    }
+
+    // 4. Advanced enhancements (CLAHE, shadow/glare removal, background whitening)
+    if (transforms.clahe) {
+      processed = this.imageProcessing.applyCLAHE(processed);
+    }
+    if (transforms.removeShadows) {
+      processed = this.imageProcessing.removeShadows(processed);
+    }
+    if (transforms.removeGlare) {
+      processed = this.imageProcessing.removeGlare(processed);
+    }
+    if (transforms.whitenBackground) {
+      processed = this.imageProcessing.whitenBackground(processed);
+    }
+
+    // 5. Highlight removal (async)
+    if (transforms.highlightRemoval !== undefined && transforms.highlightRemoval !== null) {
+      this.imageProcessing.removeHighlightsAsync(processed, transforms.highlightRemoval).then(result => {
+        // Continue with remaining transforms on the result
+        this.continueTransformsAfterAsync(result, transforms, sourceImage);
+      }).catch(() => {
+        // Fallback to synchronous
+        const result = this.imageProcessing.removeHighlights(processed, transforms.highlightRemoval!);
+        this.continueTransformsAfterAsync(result, transforms, sourceImage);
+      });
+      return; // Don't update synchronously for async operation
+    }
+
+    // 6. Denoising (before sharpening)
+    // Limit denoise radius for large images to prevent hangs
+    if (transforms.denoise !== undefined && transforms.denoise > 0) {
+      const maxDenoiseRadius = Math.min(transforms.denoise, 3); // Cap at 3 for performance
+      const imageSize = processed.width * processed.height;
+      // For very large images (>2MP), further reduce denoise radius
+      const effectiveRadius = imageSize > 2000000 ? Math.min(maxDenoiseRadius, 2) : maxDenoiseRadius;
+      console.log('Applying denoise:', { requested: transforms.denoise, effective: effectiveRadius, imageSize });
+      processed = this.imageProcessing.applyDenoiseGaussian(processed, effectiveRadius);
+    }
+    if (transforms.bilateralDenoise !== undefined && transforms.bilateralDenoise > 0) {
+      processed = this.imageProcessing.applyDenoiseBilateral(processed, transforms.bilateralDenoise, 50);
+    }
+
+    // 7. Moiré removal (async)
+    if (transforms.moireIntensity !== undefined && transforms.moireIntensity > 0) {
+      this.imageProcessing.removeMoireAsync(processed, transforms.moireIntensity).then(result => {
+        // Continue with remaining transforms on the result
+        this.continueTransformsAfterAsync(result, transforms, sourceImage);
+      }).catch(() => {
+        // Fallback to synchronous
+        const result = this.imageProcessing.removeMoire(processed, transforms.moireIntensity!);
+        this.continueTransformsAfterAsync(result, transforms, sourceImage);
+      });
+      return; // Don't update synchronously for async operation
+    }
+
+    // 8. Sharpening and edge enhancement
+    if (transforms.sharpen !== undefined && transforms.sharpen > 0) {
+      processed = this.imageProcessing.applySharpen(processed, transforms.sharpen);
+    }
+    if (transforms.edgeEnhancement !== undefined && transforms.edgeEnhancement > 0) {
+      processed = this.imageProcessing.applyEdgeEnhancement(processed, transforms.edgeEnhancement);
+    }
+
+    // 9. Super resolution (async, changes image dimensions)
+    if (transforms.superResolution !== undefined && transforms.superResolution > 1) {
+      const method = transforms.superResolutionMethod || 'bicubic';
+      this.superResolution.upscale(processed, transforms.superResolution, method).then(result => {
+        // Continue with remaining transforms on the upscaled result
+        this.continueTransformsAfterSuperResolution(result, transforms);
+      }).catch(() => {
+        // Fallback to synchronous
+        const result = this.imageProcessing.applySuperResolution(processed, transforms.superResolution!);
+        this.continueTransformsAfterSuperResolution(result, transforms);
+      });
+      return; // Don't update synchronously for async operation
+    }
+
+    // 10. Binarization (last, as it converts to black and white)
+    if (transforms.binarization) {
+      if (transforms.binarizationMethod === 'niblack') {
+        processed = this.imageProcessing.applyBinarizationNiblack(processed);
+      } else if (transforms.binarizationMethod === 'sauvola') {
+        processed = this.imageProcessing.applyBinarizationSauvola(processed);
+      } else {
+        processed = this.imageProcessing.applyBinarizationOtsu(processed);
       }
-      if (transform.contrast !== undefined) {
-        processed = this.imageProcessing.applyContrast(processed, transform.contrast);
+    }
+
+    // Update processed image
+    console.log('Transform application complete:', {
+      appliedTransforms: Object.keys(transforms).filter(k => transforms[k as keyof typeof transforms] !== undefined),
+      finalImageSize: { width: processed.width, height: processed.height },
+      isOriginalModified: processed === sourceImage
+    });
+    
+    this.processedImageData.set(processed);
+    this.stateStore.updateImageData(processed);
+  }
+
+  private continueTransformsAfterAsync(processed: ImageData, transforms: EnhancementTransformState, sourceImage: ImageData): void {
+    // After async operations, we need to re-apply all remaining transforms
+    // Start from the result of the async operation and apply transforms that come after it
+    
+    // Apply remaining transforms that come after highlight removal or moiré removal
+    if (transforms.sharpen !== undefined && transforms.sharpen > 0) {
+      processed = this.imageProcessing.applySharpen(processed, transforms.sharpen);
+    }
+    if (transforms.edgeEnhancement !== undefined && transforms.edgeEnhancement > 0) {
+      processed = this.imageProcessing.applyEdgeEnhancement(processed, transforms.edgeEnhancement);
+    }
+    
+    // Super resolution (async, changes image dimensions)
+    if (transforms.superResolution !== undefined && transforms.superResolution > 1) {
+      const method = transforms.superResolutionMethod || 'bicubic';
+      this.superResolution.upscale(processed, transforms.superResolution, method).then(result => {
+        this.continueTransformsAfterSuperResolution(result, transforms);
+      }).catch(() => {
+        const result = this.imageProcessing.applySuperResolution(processed, transforms.superResolution!);
+        this.continueTransformsAfterSuperResolution(result, transforms);
+      });
+      return;
+    }
+    
+    // Binarization (last)
+    if (transforms.binarization) {
+      if (transforms.binarizationMethod === 'niblack') {
+        processed = this.imageProcessing.applyBinarizationNiblack(processed);
+      } else if (transforms.binarizationMethod === 'sauvola') {
+        processed = this.imageProcessing.applyBinarizationSauvola(processed);
+      } else {
+        processed = this.imageProcessing.applyBinarizationOtsu(processed);
       }
-      if (transform.saturation !== undefined) {
-        processed = this.imageProcessing.applySaturation(processed, transform.saturation);
-      }
-      if (transform.gamma !== undefined) {
-        processed = this.imageProcessing.applyGamma(processed, transform.gamma);
-      }
-      if (transform.sharpen !== undefined && transform.sharpen > 0) {
-        processed = this.imageProcessing.applySharpen(processed, transform.sharpen);
-      }
-      if (transform.denoise !== undefined && transform.denoise > 0) {
-        processed = this.imageProcessing.applyDenoiseGaussian(processed, transform.denoise);
-      }
-      if (transform.bilateralDenoise !== undefined && transform.bilateralDenoise > 0) {
-        processed = this.imageProcessing.applyDenoiseBilateral(processed, transform.bilateralDenoise, 50);
-      }
-      if (transform.binarization) {
-        if (transform.binarizationMethod === 'niblack') {
-          processed = this.imageProcessing.applyBinarizationNiblack(processed);
-        } else if (transform.binarizationMethod === 'sauvola') {
-          processed = this.imageProcessing.applyBinarizationSauvola(processed);
-        } else {
-          processed = this.imageProcessing.applyBinarizationOtsu(processed);
-        }
-      }
-      if (transform.edgeEnhancement !== undefined && transform.edgeEnhancement > 0) {
-        processed = this.imageProcessing.applyEdgeEnhancement(processed, transform.edgeEnhancement);
-      }
-      if (transform.clahe) {
-        processed = this.imageProcessing.applyCLAHE(processed);
-      }
-      if (transform.removeShadows) {
-        processed = this.imageProcessing.removeShadows(processed);
-      }
-      if (transform.removeGlare) {
-        processed = this.imageProcessing.removeGlare(processed);
-      }
-          if (transform.whitenBackground) {
-            processed = this.imageProcessing.whitenBackground(processed);
-          }
-          if (transform.autoLighting) {
-            processed = this.imageProcessing.autoLightingCorrection(processed);
-          }
-          if (transform.superResolution !== undefined && transform.superResolution > 1) {
-            const method = transform.superResolutionMethod || 'bicubic';
-            // Use async super-resolution service
-            this.superResolution.upscale(processed, transform.superResolution, method).then(result => {
-              this.processedImageData.set(result);
-              this.stateStore.updateImageData(result);
-              this.stateStore.updateState({
-                width: result.width,
-                height: result.height
-              });
-            }).catch(() => {
-              // Fallback to synchronous
-              const result = this.imageProcessing.applySuperResolution(processed, transform.superResolution);
-              this.processedImageData.set(result);
-              this.stateStore.updateImageData(result);
-              this.stateStore.updateState({
-                width: result.width,
-                height: result.height
-              });
-            });
-            return; // Don't update synchronously for async operation
-          }
-          if (transform.moireIntensity !== undefined && transform.moireIntensity > 0) {
-            // Use async moiré removal for better performance
-            this.imageProcessing.removeMoireAsync(processed, transform.moireIntensity).then(result => {
-              this.processedImageData.set(result);
-              this.stateStore.updateImageData(result);
-            }).catch(() => {
-              // Fallback to synchronous
-              const result = this.imageProcessing.removeMoire(processed, transform.moireIntensity);
-              this.processedImageData.set(result);
-              this.stateStore.updateImageData(result);
-            });
-            return; // Don't update synchronously for async operation
-          }
-          if (transform.colorChannel !== undefined) {
-            processed = this.imageProcessing.isolateColorChannel(processed, transform.colorChannel);
-          }
-          if (transform.highlightRemoval !== undefined && transform.highlightRemoval !== null) {
-            // Use async highlight removal for better performance
-            this.imageProcessing.removeHighlightsAsync(processed, transform.highlightRemoval).then(result => {
-              this.processedImageData.set(result);
-              this.stateStore.updateImageData(result);
-            }).catch(() => {
-              // Fallback to synchronous
-              const result = this.imageProcessing.removeHighlights(processed, transform.highlightRemoval);
-              this.processedImageData.set(result);
-              this.stateStore.updateImageData(result);
-            });
-            return; // Don't update synchronously for async operation
-          }
-        }
+    }
 
     this.processedImageData.set(processed);
     this.stateStore.updateImageData(processed);
+  }
+
+  private continueTransformsAfterSuperResolution(processed: ImageData, transforms: EnhancementTransformState): void {
+    // After super resolution, only binarization remains
+    if (transforms.binarization) {
+      if (transforms.binarizationMethod === 'niblack') {
+        processed = this.imageProcessing.applyBinarizationNiblack(processed);
+      } else if (transforms.binarizationMethod === 'sauvola') {
+        processed = this.imageProcessing.applyBinarizationSauvola(processed);
+      } else {
+        processed = this.imageProcessing.applyBinarizationOtsu(processed);
+      }
+    }
+
+    this.processedImageData.set(processed);
+    this.stateStore.updateImageData(processed);
+    this.stateStore.updateState({
+      width: processed.width,
+      height: processed.height
+    });
   }
 
   onWarpChange(transform: any): void {
@@ -899,13 +1225,30 @@ export class OcrAppRootComponent implements OnInit {
       const options = this.currentOcrOptions();
       let result = await this.ocrEngine.performOCR(blob, options);
       
+      // Debug: Log OCR result
+      console.log('OCR Result:', {
+        textLength: result.text?.length || 0,
+        boundingBoxCount: result.boundingBoxes?.length || 0,
+        firstBox: result.boundingBoxes?.[0] || null,
+        engine: result.engine
+      });
+      
       // Exclude signature regions from OCR results
       const signatures = this.detectedSignatures();
       if (signatures.length > 0) {
         result = this.filterOutSignatureRegions(result, signatures);
+        console.log('After filtering signatures, boundingBoxCount:', result.boundingBoxes?.length || 0);
       }
       
       this.stateStore.addOcrResult(result);
+      
+      // Debug: Verify state update
+      const stateAfter = this.state();
+      console.log('State after OCR:', {
+        boundingBoxCount: stateAfter.boundingBoxes?.length || 0,
+        canvasDimensions: this.canvasDimensions(),
+        imageDimensions: { width: stateAfter.width, height: stateAfter.height }
+      });
     } catch (error) {
       console.error('OCR failed:', error);
       alert('OCR processing failed. Please try again.');
@@ -944,19 +1287,56 @@ export class OcrAppRootComponent implements OnInit {
     displayWidth: number;
     displayHeight: number;
   }): void {
-    this.canvasDimensions.set(dimensions);
+    const current = this.canvasDimensions();
+    // Only log and update if dimensions actually changed
+    if (!current || 
+        current.canvasWidth !== dimensions.canvasWidth ||
+        current.canvasHeight !== dimensions.canvasHeight ||
+        current.displayWidth !== dimensions.displayWidth ||
+        current.displayHeight !== dimensions.displayHeight) {
+      console.log('Canvas dimensions changed:', dimensions);
+      this.canvasDimensions.set(dimensions);
+    }
+  }
+
+  getCanvasWidth(): number {
+    const dims = this.canvasDimensions();
+    if (dims && dims.canvasWidth > 0) return dims.canvasWidth;
+    const state = this.state();
+    return state.width > 0 ? state.width : 800;
+  }
+
+  getCanvasHeight(): number {
+    const dims = this.canvasDimensions();
+    if (dims && dims.canvasHeight > 0) return dims.canvasHeight;
+    const state = this.state();
+    return state.height > 0 ? state.height : 600;
+  }
+
+  getDisplayWidth(): number {
+    const dims = this.canvasDimensions();
+    if (dims && dims.displayWidth > 0) return dims.displayWidth;
+    return 800;
+  }
+
+  getDisplayHeight(): number {
+    const dims = this.canvasDimensions();
+    if (dims && dims.displayHeight > 0) return dims.displayHeight;
+    return 600;
   }
 
   getScaleX(): number {
-    const dims = this.canvasDimensions();
-    if (!dims || dims.canvasWidth === 0) return 1;
-    return dims.displayWidth / dims.canvasWidth;
+    const canvasWidth = this.getCanvasWidth();
+    const displayWidth = this.getDisplayWidth();
+    if (canvasWidth === 0) return 1;
+    return displayWidth / canvasWidth;
   }
 
   getScaleY(): number {
-    const dims = this.canvasDimensions();
-    if (!dims || dims.canvasHeight === 0) return 1;
-    return dims.displayHeight / dims.canvasHeight;
+    const canvasHeight = this.getCanvasHeight();
+    const displayHeight = this.getDisplayHeight();
+    if (canvasHeight === 0) return 1;
+    return displayHeight / canvasHeight;
   }
 
   onBoxSelected(boxId: string): void {
@@ -1038,10 +1418,10 @@ export class OcrAppRootComponent implements OnInit {
     if (recommendations.whitenBackground) {
       processed = this.imageProcessing.whitenBackground(processed);
     }
-    if (recommendations.brightness !== undefined) {
+    if (recommendations.brightness !== undefined && Math.abs(recommendations.brightness) > 0.001) {
       processed = this.imageProcessing.applyBrightness(processed, recommendations.brightness);
     }
-    if (recommendations.contrast !== undefined) {
+    if (recommendations.contrast !== undefined && Math.abs(recommendations.contrast) > 0.001) {
       processed = this.imageProcessing.applyContrast(processed, recommendations.contrast);
     }
     if (recommendations.denoise !== undefined && recommendations.denoise > 0) {
@@ -1102,6 +1482,7 @@ export class OcrAppRootComponent implements OnInit {
       this.processedImageData.set(null);
       this.undoRedo.clear();
       this.splitViewEnabled.set(false);
+      this.enhancementTransforms.set({});
     }
   }
 

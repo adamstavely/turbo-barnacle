@@ -98,28 +98,33 @@ import { BoundingBox } from '../../models/bounding-box.interface';
             </button>
           }
         </div>
-      }
 
-      <mat-list>
-        @for (box of boundingBoxes; track box.id) {
-          <mat-list-item 
-            [class.selected]="box.id === selectedBoxId"
-            [class.multi-selected]="selectedBoxIds.has(box.id)">
-            <mat-checkbox 
-              [checked]="selectedBoxIds.has(box.id)"
-              (change)="onToggleSelection(box.id, $event.checked)"
-              (click)="$event.stopPropagation()">
-            </mat-checkbox>
-            <div class="box-item" (click)="onSelectBox(box.id)">
-              <div class="box-text">{{ box.text || 'No text' }}</div>
-              <div class="box-coords">({{ box.x }}, {{ box.y }}) {{ box.width }}×{{ box.height }}</div>
-              @if (box.label) {
-                <div class="box-label">Label: {{ box.label }}</div>
-              }
-            </div>
-          </mat-list-item>
-        }
-      </mat-list>
+        <mat-list>
+          @for (box of boundingBoxes; track box.id) {
+            <mat-list-item 
+              [class.selected]="box.id === selectedBoxId"
+              [class.multi-selected]="selectedBoxIds.has(box.id)">
+              <mat-checkbox 
+                [checked]="selectedBoxIds.has(box.id)"
+                (change)="onToggleSelection(box.id, $event.checked)"
+                (click)="$event.stopPropagation()">
+              </mat-checkbox>
+              <div class="box-item" (click)="onSelectBox(box.id)">
+                <div class="box-text">{{ box.text || 'No text' }}</div>
+                <div class="box-coords">({{ box.x }}, {{ box.y }}) {{ box.width }}×{{ box.height }}</div>
+                @if (box.label) {
+                  <div class="box-label">Label: {{ box.label }}</div>
+                }
+              </div>
+            </mat-list-item>
+          }
+        </mat-list>
+      } @else {
+        <div class="no-boxes-message">
+          <p>No bounding boxes yet.</p>
+          <p class="hint">Bounding boxes will appear here automatically after running OCR, or you can create them manually by drawing on the image.</p>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -195,6 +200,22 @@ import { BoundingBox } from '../../models/bounding-box.interface';
     .box-coords {
       font-size: 12px;
       color: #666;
+    }
+
+    .no-boxes-message {
+      padding: 24px;
+      text-align: center;
+      color: #666;
+    }
+
+    .no-boxes-message p {
+      margin: 8px 0;
+    }
+
+    .no-boxes-message .hint {
+      font-size: 13px;
+      color: #999;
+      font-style: italic;
     }
   `]
 })
